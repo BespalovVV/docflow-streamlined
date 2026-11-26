@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: docflow_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: docflow
+      POSTGRES_PASSWORD: docflow_secure_pass
+      POSTGRES_DB: docflow_db
+    ports:
+      - "5439:5432"
+    volumes:
+      - pgdata_pgvector:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docflow -d docflow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: docflow_onlyoffice
+    restart: always
+    ports:
+      - "28083:80"
+    environment:
+      - JWT_ENABLED=false
+      - ALLOW_PRIVATE_IP_ADDRESS=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: docflow_minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: docflow_minio_user
+      MINIO_ROOT_PASSWORD: docflow_minio_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: docflow_streamlined
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      JWT_SECRET: docflow_secret_key_2026_super_secure
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: docflow
+      PGPASSWORD: docflow_secure_pass
+      PGDATABASE: docflow_db
+      ONLYOFFICE_URL: http://localhost:28083
+      CONTAINER_APP_HOST: docflow_streamlined:3000
+      APP_INTERNAL_URL: http://docflow_streamlined:3000
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ROOT_USER: docflow_minio_user
+      MINIO_ROOT_PASSWORD: docflow_minio_password
+      MINIO_BUCKET: docflow-storage
+      HF_CACHE_DIR: /app/.hf_cache
+      EMBEDDING_MODEL: Xenova/multilingual-e5-small
+      SSO_LABSPACE_CLIENT_SECRET: docflow-labspace-client-secret-2026-keep-distinct-32chars
+      SSO_DOCFLOW_CLIENT_SECRET: labspace-docflow-client-secret-2026-keep-distinct-32chars
+      SSO_LABSPACE_URL: https://d1k1gw4f-8100.uks1.devtunnels.ms/
+      SSO_LABSPACE_INTERNAL_URL: http://host.docker.internal:8100
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+      - hf_cache:/app/.hf_cache
+      - ./public:/app/public
+      - ./backend:/app/backend
+
+volumes:
+  pgdata:
+  pgdata_pgvector:
+  uploads_data:
+  minio_data:
+  hf_cache:

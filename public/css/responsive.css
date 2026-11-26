@@ -1,0 +1,722 @@
+/* ==========================================
+   RESPONSIVE LAYOUT & MEDIA QUERIES
+   ========================================== */
+
+/* By default hide sidebar theme toggle on desktop */
+.sidebar-theme-wrapper {
+  display: none;
+}
+
+/* TABLETS & DRAWER MENU THRESHOLD (Max 1024px) */
+@media (max-width: 1024px) {
+  .mobile-toggle-btn {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  .mobile-close-sidebar-btn,
+  .desktop-collapse-sidebar-btn,
+  #btn-desktop-collapse-sidebar {
+    display: none !important;
+  }
+
+  /* OFF-CANVAS SIDEBAR DRAWER */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 264px;
+    max-width: 85vw;
+    z-index: 1200;
+    transform: translateX(-100%);
+    transition: transform var(--motion-drawer) ease;
+    box-shadow: var(--shadow-modal);
+  }
+
+  /* Игнорируем десктопное сворачивание .collapsed в мобильном выдвижном меню */
+  .sidebar.collapsed {
+    width: 264px !important;
+  }
+  .sidebar.collapsed .logo-text,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed #sidebar-theme-text,
+  .sidebar.collapsed .pwa-install-text,
+  .sidebar.collapsed .user-details,
+  .sidebar.collapsed .sidebar-bookmarks-header,
+  .sidebar.collapsed .sidebar-bookmark-title {
+    display: block !important;
+  }
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed #sidebar-theme-text,
+  .sidebar.collapsed .pwa-install-text {
+    display: inline !important;
+  }
+  .sidebar.collapsed .sidebar-bookmarks-header {
+    display: flex !important;
+  }
+  .sidebar.collapsed .sidebar-header {
+    padding: 16px 18px !important;
+    justify-content: flex-start !important;
+  }
+  .sidebar.collapsed .nav-item {
+    justify-content: flex-start !important;
+    padding: 8px 12px !important;
+  }
+  .sidebar.collapsed .sidebar-pwa-wrapper,
+  .sidebar.collapsed .sidebar-theme-wrapper {
+    padding: 10px 14px !important;
+  }
+  .sidebar.collapsed .pwa-install-btn,
+  .sidebar.collapsed #btn-sidebar-theme-toggle {
+    padding: 8px 12px !important;
+    justify-content: center !important;
+  }
+  .sidebar.collapsed .sidebar-footer {
+    padding: 14px 16px !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .top-bar {
+    padding: 10px 18px;
+  }
+  .content-area {
+    padding: 18px;
+  }
+  .mail-sidebar {
+    width: 180px;
+  }
+  .mail-list {
+    width: 280px;
+  }
+}
+
+/* SMARTPHONES & SMALL TABLETS (Max 768px) */
+@media (max-width: 768px) {
+  .card,
+  .grid-4 > *,
+  .grid-3 > *,
+  .grid-2 > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* TOP BAR MOBILE */
+  .top-bar {
+    padding: 10px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .top-bar > div:first-child {
+    justify-content: flex-start;
+  }
+
+  .top-bar-right {
+    justify-content: space-between;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .top-bar-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .page-header h1 {
+    font-size: 16px;
+  }
+
+  .page-header p {
+    display: none;
+  }
+
+  /* FLUID GRIDS */
+  .grid-4,
+  .grid-3,
+  .grid-2 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .content-area {
+    padding: 14px;
+  }
+
+  /* MODALS MOBILE */
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .modal-window {
+    width: 100%;
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-md);
+  }
+
+  .modal-header {
+    padding: 14px 18px;
+  }
+
+  .modal-body {
+    padding: 16px 18px;
+    max-height: calc(92vh - 65px);
+  }
+
+  /* BUTTONS & TOUCH CONTROLS */
+  .btn {
+    padding: 8px 14px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  /* THEME TOGGLE: Hidden from top-bar on mobile, placed inside burger sidebar */
+  .top-bar-right #btn-theme-toggle,
+  #btn-theme-toggle {
+    display: none !important;
+  }
+  .sidebar-theme-wrapper {
+    display: block !important;
+  }
+
+  /* MAIL MOBILE LAYOUT */
+  .mail-layout {
+    flex-direction: column;
+    height: auto;
+    min-height: calc(100vh - 140px);
+  }
+
+  .mail-sidebar {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .mail-sidebar #btn-compose-mail {
+    width: 100%;
+    margin-bottom: 6px;
+  }
+
+  .mail-folder {
+    flex: 1;
+    min-width: 120px;
+    justify-content: center;
+  }
+
+  .mail-sidebar > div:last-child {
+    width: 100%;
+    flex-direction: row !important;
+    gap: 6px !important;
+    border-top: none !important;
+    padding-top: 4px !important;
+  }
+
+  .mail-list {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    max-height: 340px;
+    overflow-y: auto;
+  }
+
+  .mail-body-pane {
+    width: 100%;
+    padding: 16px;
+  }
+
+  /* KANBAN TASKS HORIZONTAL SCROLL */
+  .kanban-board {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    padding-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+
+  .kanban-column {
+    min-width: 270px;
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  /* CALENDAR MOBILE */
+  .calendar-months-grid {
+    grid-template-columns: 1fr;
+  }
+  .calendar-top-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .calendar-nav-group {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .calendar-period-presets {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+  .calendar-preset-btn {
+    flex-shrink: 0;
+  }
+  .custom-range-picker {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .custom-range-picker input[type="date"] {
+    flex: 1;
+    min-width: 0;
+  }
+  .events-grid {
+    grid-template-columns: 1fr;
+  }
+  .timeline-event {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* ONLYOFFICE MOBILE */
+  .onlyoffice-wrapper {
+    height: calc(100vh - 180px);
+  }
+}
+
+/* SMALL PHONES (Max 480px) */
+@media (max-width: 480px) {
+  .card {
+    padding: 14px;
+  }
+  .card-header {
+    margin-bottom: 10px;
+  }
+  .card-title {
+    font-size: 14px;
+  }
+  .top-bar-actions .btn {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+}
+
+
+/* ========================================================
+   ADVANCED RESPONSIVE STYLES (TABLETS & SMARTPHONES)
+   ======================================================== */
+@media (max-width: 900px) {
+  .google-calendar-layout {
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: auto !important;
+  }
+  .gcal-sidebar {
+    display: none !important;
+  }
+  .gcal-main-grid {
+    width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    min-height: calc(100vh - 160px) !important;
+    height: calc(100vh - 160px) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* ========================================================
+     MESSENGER ON MOBILE: SCREEN 1 (CHATS) vs SCREEN 2 (ACTIVE CHAT)
+     ======================================================== */
+  .messenger-layout {
+    height: calc(100dvh - 195px) !important;
+    min-height: 320px !important;
+    border-radius: 10px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+
+  /* Default state on mobile: show chats sidebar, hide chat pane */
+  .messenger-layout .messenger-sidebar {
+    width: 100% !important;
+    max-height: 100% !important;
+    height: 100% !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    display: flex !important;
+    flex: 1 1 100% !important;
+  }
+  .messenger-layout .messenger-chat-pane {
+    display: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+  }
+
+  /* When chat is active on mobile: hide sidebar, show chat pane full screen! */
+  .messenger-layout.mobile-chat-open .messenger-sidebar {
+    display: none !important;
+  }
+  .messenger-layout.mobile-chat-open .messenger-chat-pane {
+    display: flex !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    flex: 1 1 100% !important;
+  }
+
+  /* Show back button in chat header */
+  .mobile-chat-back-btn {
+    display: inline-flex !important;
+  }
+
+  /* Mobile chat header compact padding */
+  #chat-header {
+    padding: 10px 14px !important;
+  }
+  #chat-messages-container {
+    padding: 14px 12px !important;
+  }
+
+  /* Input bar padding and spacing */
+  .messenger-chat-pane > div:last-child {
+    padding: 8px 10px !important;
+  }
+  .messenger-input-row {
+    gap: 6px !important;
+  }
+  .chat-attach-btn {
+    width: 38px !important;
+    height: 38px !important;
+  }
+  .chat-send-btn {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  .chat-input-textarea {
+    padding: 9px 14px !important;
+    min-height: 40px !important;
+    font-size: 14px !important;
+    overflow-y: auto !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+  .chat-input-textarea::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  /* ========================================================
+     MAIL ON MOBILE: TABS INSTEAD OF SIDEBAR, FULL-WIDTH LIST
+     ======================================================== */
+  .mail-layout-full {
+    height: calc(100dvh - 195px) !important;
+    min-height: 320px !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+  }
+  .mail-sidebar {
+    display: none !important;
+  }
+  .mail-mobile-tabs-bar {
+    display: flex !important;
+    overflow-x: hidden !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .mail-mobile-tabs-bar .mail-tab-pill {
+    flex: 1 1 50% !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+  .mail-fab-compose {
+    display: flex !important;
+    position: fixed !important;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px) + 12px) !important;
+    right: 16px !important;
+    z-index: 1050 !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(37, 99, 235, 0.5) !important;
+  }
+
+  /* Резервируем отступ снизу в списке писем, чтобы плавающая кнопка 'Написать' не перекрывала последнее письмо */
+  #mail-items-list {
+    padding-bottom: 96px !important;
+  }
+
+  /* Mobile Mail row item */
+  .mail-row-item {
+    padding: 12px 14px !important;
+    gap: 10px !important;
+    flex-wrap: wrap !important;
+    position: relative !important;
+  }
+  .mail-row-item .mail-sender-cell {
+    width: auto !important;
+    max-width: calc(100% - 100px) !important;
+    font-size: 14px !important;
+  }
+  .mail-row-item .mail-date-cell {
+    width: auto !important;
+    margin-left: auto !important;
+    font-size: 11px !important;
+  }
+  .mail-row-item .mail-content-cell {
+    width: 100% !important;
+    margin-top: 2px !important;
+    padding-left: 18px !important;
+  }
+
+  /* MODALS ON MOBILE (ERGONOMIC CARD DIALOGS, NOT BLINDING FULLSCREEN) */
+  .modal-overlay {
+    padding: 12px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 2500 !important;
+  }
+  .modal-window {
+    max-width: 95% !important;
+    width: 100% !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: 90vh !important;
+    max-height: 90dvh !important;
+    border-radius: var(--radius-lg, 12px) !important;
+    border: 1px solid var(--border-color) !important;
+  }
+  .modal-window.modal-sm {
+    max-width: 420px !important;
+  }
+  .modal-body {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    padding: 16px !important;
+  }
+
+  /* FULLSCREEN MAIL OVERLAY ON MOBILE */
+  #mail-reader-overlay,
+  .mail-reader-overlay {
+    padding: 0 !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+  }
+  #mail-reader-overlay > .card,
+  #mail-reader-overlay .mail-reader-card,
+  .mail-reader-card {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    height: 100% !important;
+    border: none !important;
+  }
+  .mail-reader-topbar {
+    padding: max(8px, env(safe-area-inset-top, 0px)) 10px 8px 10px !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+  }
+  .mail-reader-topbar > div {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch;
+    min-width: 0;
+    flex: 1;
+  }
+  .mail-reader-topbar > div::-webkit-scrollbar {
+    display: none;
+  }
+  .mail-reader-topbar .btn {
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+    min-height: 36px !important;
+  }
+  .mail-reader-header {
+    padding: 14px 14px 12px !important;
+  }
+  .mail-reader-body {
+    padding: 10px 10px 24px !important;
+  }
+  .mail-plain-body {
+    padding: 14px !important;
+    font-size: 13px !important;
+  }
+
+  .top-bar {
+    padding: 8px 12px !important;
+    gap: 6px !important;
+    min-height: 52px !important;
+  }
+  .top-bar-right {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .top-bar-right::-webkit-scrollbar {
+    display: none;
+  }
+  .top-bar-right > .btn,
+  .top-bar-actions .btn {
+    flex-shrink: 0 !important;
+    min-height: 36px !important;
+    padding: 5px 10px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+  .top-bar-actions {
+    width: auto !important;
+    display: flex !important;
+    gap: 6px !important;
+    flex-wrap: nowrap !important;
+    overflow: visible !important;
+    padding-bottom: 0 !important;
+  }
+  .top-bar-actions > div {
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+  .content-area {
+    padding: 10px 10px !important;
+  }
+  .ai-expand-btn {
+    display: none !important;
+  }
+  .ai-widget {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .ai-chat-window {
+    width: 100% !important;
+    max-width: none !important;
+    height: min(540px, calc(100dvh - 148px)) !important;
+    max-height: calc(100dvh - 148px) !important;
+  }
+  body[data-current-view="messenger"] .ai-widget {
+    bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  body[data-current-view="messenger"] .ai-chat-window {
+    max-height: calc(100dvh - 168px) !important;
+  }
+
+  /* TASKS CATEGORY BAR */
+  .task-cat-filter-btn {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+  }
+}
+
+/* ========================================================
+   MODERN TOUCH-FRIENDLY MOBILE BOTTOM DOCK (< 768px)
+   ======================================================== */
+.mobile-bottom-nav {
+  display: none !important;
+}
+
+/* На десктопе кнопка смены темы находится в правом верхнем углу (топбар).
+   Скрываем дублирующую кнопку из сайдбара, чтобы исключить повторяющуюся информацию */
+.sidebar-theme-wrapper {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .sidebar-theme-wrapper {
+    display: block !important;
+  }
+
+  .content-area {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .mobile-bottom-nav:not([hidden]) {
+    display: flex !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(60px + env(safe-area-inset-bottom, 0px));
+    background: var(--chrome);
+    border-top: 1px solid var(--line);
+    box-shadow: var(--shadow-panel);
+    z-index: 1000;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 4px env(safe-area-inset-bottom, 0px) 4px;
+    box-sizing: border-box;
+  }
+
+  .app-footer {
+    margin-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    height: 100%;
+    color: var(--text-muted);
+    text-decoration: none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 6px 0;
+    transition: color 0.15s ease, transform 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-nav-item:active {
+    transform: scale(0.94);
+  }
+
+  .mobile-nav-item.active {
+    color: var(--primary);
+  }
+
+  .mobile-nav-icon {
+    font-size: 18px;
+    line-height: 1.2;
+  }
+
+  .mobile-nav-label {
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+}

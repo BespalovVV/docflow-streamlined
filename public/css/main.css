@@ -1,0 +1,26 @@
+/* ========================================================
+   DocFlow Platform — Master Stylesheet Index
+   Архитектура стилей декомпозирована на специализированные модули:
+   - variables.css: Системные переменные, палитры, темная и светлая темы
+   - base.css: Reset, типографика, скроллбар, кнопки, базовые формы
+   - layout.css: Сетка, сайдбар, топбар, модальные окна
+   - components.css: Карточки, таблицы, бейджи, скелетоны
+   - modules/calendar.css: Интерактивный календарь и планировщик
+   - modules/documents.css: Документы, папки, OnlyOffice редактор
+   - modules/mail.css: Почтовый ящик, Gmail/Mail.ru модальное окно
+   - modules/messenger.css: Telegram/WhatsApp мессенджер, чаты, вложения
+   - modules/materials.css: 3-уровневое подразделение (Направление -> Проект -> Материал)
+   - responsive.css: Адаптивность для мобильных телефонов и планшетов
+   ======================================================== */
+
+@import url('variables.css?v=20261126_01');
+@import url('base.css?v=20261126_01');
+@import url('layout.css?v=20261126_01');
+@import url('components.css?v=20261126_01');
+@import url('modules/calendar.css?v=20261126_01');
+@import url('modules/documents.css?v=20261126_01');
+@import url('modules/mail.css?v=20261126_02');
+@import url('modules/messenger.css?v=20261126_01');
+@import url('modules/materials.css?v=20261126_01');
+@import url('spatial-glass.css?v=20261126_01');
+@import url('responsive.css?v=20261126_01');

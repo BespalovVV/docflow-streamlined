@@ -1,0 +1,119 @@
+name: CI/CD Pipeline - Автоматическое тестирование и Бесшовный Деплой
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Целевое окружение для деплоя'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  # ==============================================================
+  # ЭТАП 1: ТЕСТИРОВАНИЕ И ПРОВЕРКА БЕЗОПАСНОСТИ
+  # ==============================================================
+  test:
+    name: 🧪 Автоматические тесты (RBAC, Security, Integration)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: docflow
+          POSTGRES_PASSWORD: docflow_secure_pass
+          POSTGRES_DB: docflow_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: 📥 Клонирование репозитория
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Настройка Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Установка зависимостей
+        run: npm ci
+
+      - name: 🚀 Запуск тестового пакета (RBAC, Безопасность, БД)
+        env:
+          NODE_ENV: test
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: docflow
+          PGPASSWORD: docflow_secure_pass
+          PGDATABASE: docflow_db
+          JWT_SECRET: ci_cd_test_secret_key_2026_super_secure
+        run: npm test
+
+  # ==============================================================
+  # ЭТАП 2: СБОРКА DOCKER ОБРАЗОВ
+  # ==============================================================
+  build:
+    name: 🐳 Сборка и проверка Docker образа
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: 📥 Клонирование репозитория
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Настройка Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔨 Тестовая сборка Docker образа с кэшированием
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: docflow-app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==============================================================
+  # ЭТАП 3: БЕСШОВНОЕ РАЗВЕРТЫВАНИЕ НА СЕРВЕРЕ (ZERO-DOWNTIME DEPLOY)
+  # ==============================================================
+  deploy:
+    name: 🚀 Бесшовный деплой на Production сервер
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: 📥 Клонирование репозитория
+        uses: actions/checkout@v4
+
+      - name: 🔑 Подключение по SSH и запуск бесшовного обновления
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          port: ${{ secrets.PROD_SERVER_PORT || 22 }}
+          script_stop: true
+          script: |
+            echo "=========================================================="
+            echo "🚀 Запуск процесса бесшовного обновления DocFlow..."
+            echo "=========================================================="
+            cd /opt/docflow-streamlined || cd ~/docflow-streamlined
+            chmod +x deploy.sh
+            ./deploy.sh

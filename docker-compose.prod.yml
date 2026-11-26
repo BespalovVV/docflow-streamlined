@@ -1,0 +1,174 @@
+version: '3.8'
+
+networks:
+  docflow_net:
+    driver: bridge
+
+volumes:
+  pgdata_prod:
+    driver: local
+  pgdata_prod_vec:
+    driver: local
+  uploads_data_prod:
+    driver: local
+  minio_data_prod:
+    driver: local
+  hf_cache_prod:
+    driver: local
+
+services:
+  # ==============================================================
+  # БАЗА ДАННЫХ POSTGRESQL + PGVECTOR
+  # ==============================================================
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: docflow_postgres_prod
+    restart: always
+    networks:
+      - docflow_net
+    environment:
+      POSTGRES_USER: ${PGUSER:-docflow}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-docflow_secure_pass_prod_2026}
+      POSTGRES_DB: ${PGDATABASE:-docflow_db}
+    ports:
+      - "127.0.0.1:5439:5432" # Привязка к localhost для безопасности
+    volumes:
+      - pgdata_prod_vec:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-docflow} -d ${PGDATABASE:-docflow_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # ==============================================================
+  # ОБЛАЧНОЕ ХРАНИЛИЩЕ S3 (MINIO)
+  # ==============================================================
+  minio:
+    image: minio/minio:latest
+    container_name: docflow_minio_prod
+    restart: always
+    networks:
+      - docflow_net
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docflow_minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docflow_minio_password_prod_2026}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data_prod:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # ==============================================================
+  # СЕРВЕР ДОКУМЕНТОВ ONLYOFFICE DOCS
+  # ==============================================================
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: docflow_onlyoffice_prod
+    restart: always
+    networks:
+      - docflow_net
+    ports:
+      - "127.0.0.1:28083:80"
+    environment:
+      - JWT_ENABLED=false
+      - ALLOW_PRIVATE_IP_ADDRESS=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 3072M
+
+  # ==============================================================
+  # ОСНОВНОЕ ПРИЛОЖЕНИЕ (DOCFLOW APP BACKEND & SPA)
+  # ==============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docflow_app_prod
+    restart: always
+    networks:
+      - docflow_net
+    ports:
+      - "127.0.0.1:3000:3000" # Трафик проксируется через внешний Nginx с SSL
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:-docflow_secret_key_production_super_secure_change_me}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${PGUSER:-docflow}
+      PGPASSWORD: ${PGPASSWORD:-docflow_secure_pass_prod_2026}
+      PGDATABASE: ${PGDATABASE:-docflow_db}
+      ONLYOFFICE_URL: ${ONLYOFFICE_PUBLIC_URL:-http://127.0.0.1:28083}
+      CONTAINER_APP_HOST: docflow_app_prod:3000
+      APP_INTERNAL_URL: http://docflow_app_prod:3000
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docflow_minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docflow_minio_password_prod_2026}
+      MINIO_BUCKET: docflow-storage
+      HF_CACHE_DIR: /app/.hf_cache
+      EMBEDDING_MODEL: Xenova/multilingual-e5-small
+      SSO_LABSPACE_URL: ${SSO_LABSPACE_URL:-}
+      SSO_LABSPACE_INTERNAL_URL: ${SSO_LABSPACE_INTERNAL_URL:-}
+      SSO_LABSPACE_CLIENT_SECRET: ${SSO_LABSPACE_CLIENT_SECRET:-}
+      SSO_DOCFLOW_CLIENT_SECRET: ${SSO_DOCFLOW_CLIENT_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - uploads_data_prod:/app/uploads
+      - hf_cache_prod:/app/.hf_cache
+      - ./public:/app/public
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1536M

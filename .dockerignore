@@ -1,0 +1,16 @@
+node_modules
+.git
+.gitignore
+.env
+.hf_cache
+uploads
+data
+docx_media
+LabSpace-*
+_backup_*
+*.zip
+*.docx
+sso.py
+test_sso.py
+TEST_USERS.txt
+onlyoffice_local.json

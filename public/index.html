@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocFlow — Единая корпоративная платформа</title>
+  <meta name="description"
+    content="DocFlow — минималистичная корпоративная система управления документами, коммуникацией и бизнес-процессами">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#109e77">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DocFlow">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Source+Serif+4:wght@400;600&display=swap"
+    rel="stylesheet">
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('docflow_theme');
+        var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+      } catch (e) { }
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/main.css?v=20261126_02">
+</head>
+
+<body>
+  <a href="#content-area" class="skip-link">Перейти к содержимому</a>
+
+  <!-- AUTH / LOGIN OVERLAY (SPATIAL 3D GLASSMORPHISM) -->
+  <div id="auth-screen" class="auth-overlay hidden">
+    <div class="auth-topbar">
+      <div class="auth-topbar-brand">
+        <img src="/assets/logo-icon.svg" alt="DocFlow" width="28" height="28" style="display: block;">
+        <span>DocFlow</span>
+        <span class="logo-badge">WORKSPACE</span>
+      </div>
+      <div class="auth-topbar-controls">
+        <button type="button" id="btn-auth-install-pwa" class="btn btn-secondary pwa-install-trigger"
+          style="padding: 6px 12px; font-size: 12.5px; font-weight: 600;"
+          title="Установить приложение DocFlow на телефон или компьютер">
+          <span aria-hidden="true"><svg class="df-ico" width="16" height="16" aria-hidden="true">
+              <use href="#df-ico-smartphone" />
+            </svg></span>
+          <span>Установить</span>
+        </button>
+        <button type="button" id="btn-auth-theme-toggle" class="btn btn-secondary"
+          style="padding: 6px 12px; font-size: 12.5px; font-weight: 600;">
+          <span id="auth-theme-icon" aria-hidden="true"><svg class="df-ico" width="16" height="16" aria-hidden="true">
+              <use href="#df-ico-moon" />
+            </svg></span>
+          <span id="auth-theme-text">Тёмная</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="auth-stage">
+      <div class="auth-hero">
+        <h1 class="auth-hero-title">Войти в <span>DocFlow</span></h1>
+        <p class="auth-hero-subtitle">
+          Получите доступ к хранилищу документов, интеллектуальному поиску с ответами по содержанию, задачам, почте и
+          корпоративной коммуникации.
+        </p>
+        <div class="auth-feature-grid">
+          <div class="auth-feature-card">
+            <div class="auth-feature-icon"><svg class="df-ico" width="20" height="20" aria-hidden="true">
+                <use href="#df-ico-file-text" />
+              </svg></div>
+            <div>
+              <h4>Умные документы</h4>
+              <p>Совместное редактирование, версионирование и AI-поиск цитат.</p>
+            </div>
+          </div>
+          <div class="auth-feature-card">
+            <div class="auth-feature-icon"><svg class="df-ico" width="20" height="20" aria-hidden="true">
+                <use href="#df-ico-bar-chart" />
+              </svg></div>
+            <div>
+              <h4>Аналитика и KPI</h4>
+              <p>Контроль сроков, загрузка отделов и управление проектами.</p>
+            </div>
+          </div>
+          <div class="auth-feature-card">
+            <div class="auth-feature-icon"><svg class="df-ico" width="20" height="20" aria-hidden="true">
+                <use href="#df-ico-shield" />
+              </svg></div>
+            <div>
+              <h4>Защита доступа</h4>
+              <p>Иерархия ролей, гибкий ACL и изоляция корпоративных данных.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-card">
+        <!-- ШАГ 1: ВВОД ЛОГИНА И ПАРОЛЯ -->
+        <div id="auth-step-login">
+          <div class="auth-brand" style="text-align: left; margin-bottom: 22px;">
+            <h2
+              style="font-size: 21px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; letter-spacing: -0.4px;">
+              Вход в аккаунт</h2>
+            <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Используйте корпоративную почту и пароль
+            </p>
+          </div>
+          <form id="login-form">
+            <div class="form-group">
+              <label>Электронная почта</label>
+              <input type="email" id="login-email" required placeholder="user@docflow.local" autocomplete="username">
+            </div>
+            <div class="form-group">
+              <label>Пароль</label>
+              <input type="password" id="login-password" required placeholder="••••••••"
+                autocomplete="current-password">
+            </div>
+            <div id="login-error" class="form-error hidden"></div>
+            <div id="sso-link-banner" class="hidden"
+              style="margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; line-height: 1.45;">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block"
+              style="padding: 11px 16px; font-size: 14px; font-weight: 600;">Войти в портал &rarr;</button>
+          </form>
+          <div
+            style="display: flex; align-items: center; gap: 10px; margin: 14px 0; color: var(--text-muted); font-size: 12px;">
+            <span style="flex: 1; height: 1px; background: var(--border-color);"></span>
+            <span>или</span>
+            <span style="flex: 1; height: 1px; background: var(--border-color);"></span>
+          </div>
+          <button type="button" id="btn-sso-labspace" class="btn btn-secondary btn-block"
+            style="padding: 10px 16px; font-size: 13.5px; font-weight: 600;">
+            <svg class="df-ico" width="16" height="16" aria-hidden="true">
+              <use href="#df-ico-flask" />
+            </svg> Войти через LabSpace (SSO)
+          </button>
+        </div>
+
+        <!-- ШАГ 2A: ОБЯЗАТЕЛЬНАЯ НАСТРОЙКА 2FA ПРИ ПЕРВОМ ВХОДЕ -->
+        <div id="auth-step-2fa-setup" class="hidden">
+          <div class="auth-brand" style="text-align: left; margin-bottom: 14px;">
+            <span class="badge badge-primary" style="font-size: 10.5px; margin-bottom: 8px; display: inline-flex;"><svg
+                class="df-ico" width="13" height="13" aria-hidden="true">
+                <use href="#df-ico-lock" />
+              </svg> Обязательная защита аккаунта</span>
+            <h2
+              style="font-size: 20px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; letter-spacing: -0.4px;">
+              Настройка 2FA</h2>
+            <p style="color: var(--text-muted); font-size: 12.5px; margin: 0;">
+              Отсканируйте QR-код в приложении-аутентификаторе (Яндекс Ключ, Google Authenticator, 2FAS или Authy) для
+              <strong id="twofa-setup-email"></strong>.
+            </p>
+          </div>
+
+          <div class="twofa-qr-box">
+            <img id="twofa-qr-img" src="" alt="QR-код для настройки 2FA" width="184" height="184">
+          </div>
+
+          <div class="twofa-secret-row">
+            <span class="text-muted" style="font-size: 11px;">Ключ вручную:</span>
+            <code id="twofa-manual-secret"></code>
+            <button type="button" id="btn-copy-2fa-secret" class="btn btn-secondary btn-sm"
+              style="padding: 3px 8px; font-size: 11px;" title="Скопировать секретный ключ"><svg class="df-ico"
+                width="14" height="14" aria-hidden="true">
+                <use href="#df-ico-clipboard" />
+              </svg></button>
+          </div>
+
+          <form id="twofa-setup-form">
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label>Код подтверждения (6 цифр из приложения)</label>
+              <input type="text" id="twofa-setup-code" class="twofa-code-input" inputmode="numeric"
+                autocomplete="one-time-code" maxlength="7" placeholder="000 000" required>
+            </div>
+            <div id="twofa-setup-error" class="form-error hidden"></div>
+            <div style="display: flex; gap: 8px; flex-direction: column;">
+              <button type="submit" class="btn btn-primary btn-block"
+                style="padding: 11px 16px; font-size: 14px; font-weight: 600;">Активировать 2FA и войти &rarr;</button>
+              <button type="button" id="btn-2fa-setup-back" class="btn btn-secondary btn-block"
+                style="padding: 9px 14px; font-size: 12.5px;">&larr; Другой аккаунт</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- ШАГ 2B: ОДНОРАЗОВЫЕ РЕЗЕРВНЫЕ КОДЫ ПОСЛЕ АКТИВАЦИИ 2FA -->
+        <div id="auth-step-2fa-backup" class="hidden">
+          <div class="auth-brand" style="text-align: left; margin-bottom: 14px;">
+            <span class="badge"
+              style="font-size: 10.5px; margin-bottom: 8px; display: inline-flex; background: rgba(16,185,129,0.16); color: #10b981; border: 1px solid rgba(16,185,129,0.35);"><svg
+                class="df-ico" width="13" height="13" aria-hidden="true">
+                <use href="#df-ico-check-circle" />
+              </svg> 2FA успешно включена</span>
+            <h2
+              style="font-size: 20px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; letter-spacing: -0.4px;">
+              Резервные коды доступа</h2>
+            <p style="color: var(--text-muted); font-size: 12.5px; margin: 0;">
+              Сохраните эти 8 одноразовых кодов. Они показываются <strong>один раз</strong> и позволят войти, если
+              телефон будет недоступен.
+            </p>
+          </div>
+
+          <div id="twofa-backup-codes-grid" class="twofa-backup-grid"></div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <button type="button" id="btn-copy-backup-codes" class="btn btn-secondary btn-sm" style="flex: 1;"><svg
+                class="df-ico" width="14" height="14" aria-hidden="true">
+                <use href="#df-ico-clipboard" />
+              </svg> Скопировать</button>
+            <button type="button" id="btn-download-backup-codes" class="btn btn-secondary btn-sm" style="flex: 1;"><svg
+                class="df-ico" width="14" height="14" aria-hidden="true">
+                <use href="#df-ico-save" />
+              </svg> Скачать .txt</button>
+          </div>
+
+          <button type="button" id="btn-2fa-backup-continue" class="btn btn-primary btn-block"
+            style="padding: 11px 16px; font-size: 14px; font-weight: 600;">
+            Я сохранил коды — перейти в портал &rarr;
+          </button>
+        </div>
+
+        <!-- ШАГ 2C: ПОДТВЕРЖДЕНИЕ ВХОДА ПО 2FA (ИЛИ РЕЗЕРВНОМУ КОДУ) -->
+        <div id="auth-step-2fa-verify" class="hidden">
+          <div class="auth-brand" style="text-align: left; margin-bottom: 18px;">
+            <span class="badge badge-primary" style="font-size: 10.5px; margin-bottom: 8px; display: inline-flex;"><svg
+                class="df-ico" width="13" height="13" aria-hidden="true">
+                <use href="#df-ico-lock" />
+              </svg> Двухфакторная проверка</span>
+            <h2
+              style="font-size: 20px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; letter-spacing: -0.4px;">
+              Введите код 2FA</h2>
+            <p style="color: var(--text-muted); font-size: 12.5px; margin: 0;">
+              Укажите 6-значный код из приложения или резервный код (<code>XXXX-XXXX</code>) для <strong
+                id="twofa-verify-email"></strong>.
+            </p>
+          </div>
+
+          <form id="twofa-verify-form">
+            <div class="form-group">
+              <label>Код подтверждения или резервный код</label>
+              <input type="text" id="twofa-verify-code" class="twofa-code-input" autocomplete="one-time-code"
+                maxlength="12" placeholder="000000 или XXXX-XXXX" required>
+            </div>
+            <div id="twofa-verify-error" class="form-error hidden"></div>
+            <div style="display: flex; gap: 8px; flex-direction: column;">
+              <button type="submit" class="btn btn-primary btn-block"
+                style="padding: 11px 16px; font-size: 14px; font-weight: 600;">Подтвердить вход &rarr;</button>
+              <button type="button" id="btn-2fa-verify-back" class="btn btn-secondary btn-block"
+                style="padding: 9px 14px; font-size: 12.5px;">&larr; Другой аккаунт</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-footer-note">
+      DocFlow Workspace &bull; Единая платформа документов, процессов и автономного поиска знаний
+    </div>
+  </div>
+
+  <!-- MAIN SPA APP CONTAINER -->
+  <div id="app-screen" class="app-layout hidden">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="app-sidebar" role="navigation" aria-label="Основное меню навигации">
+      <div class="sidebar-header">
+        <div class="logo-mark"
+          style="background: transparent; display: flex; align-items: center; justify-content: center;">
+          <img src="/assets/logo-icon.svg" alt="DocFlow" width="28" height="28" style="display: block;">
+        </div>
+        <div class="logo-text">
+          <span class="logo-title">DocFlow</span>
+          <span class="logo-badge">WORKSPACE</span>
+        </div>
+        <button id="btn-desktop-collapse-sidebar" class="btn-icon desktop-collapse-sidebar-btn"
+          title="Свернуть / развернуть меню" aria-label="Свернуть меню"
+          style="margin-left: auto; width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; color: var(--text-muted); background: var(--bg-subtle); border: 1px solid var(--border-color); transition: all 0.2s ease;">◀</button>
+        <button id="btn-close-sidebar" class="btn-icon mobile-close-sidebar-btn" title="Закрыть меню"
+          aria-label="Закрыть меню навигации">&times;</button>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Разделы рабочей области">
+        <a href="#dashboard" class="nav-item active" data-view="dashboard" id="nav-desktop-dashboard"
+          aria-label="Дашборд">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-bar-chart" />
+            </svg></span>
+          <span class="nav-label">Дашборд</span>
+        </a>
+        <a href="#mail" class="nav-item" data-view="mail" id="nav-desktop-mail" aria-label="Почта">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-mail" />
+            </svg></span>
+          <span class="nav-label">Почта</span>
+          <span id="mail-badge" class="badge badge-pill hidden" aria-label="Новых сообщений">0</span>
+        </a>
+        <a href="#messenger" class="nav-item" data-view="messenger" id="nav-desktop-messenger" aria-label="Мессенджер">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-message-circle" />
+            </svg></span>
+          <span class="nav-label">Мессенджер</span>
+        </a>
+        <a href="#projects" class="nav-item" data-view="projects" id="nav-desktop-projects" aria-label="Проекты">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-folder" />
+            </svg></span>
+          <span class="nav-label">Проекты</span>
+        </a>
+        <a href="#materials" class="nav-item" data-view="materials" id="nav-desktop-materials" aria-label="Направления"
+          title="Трёхуровневое подразделение: Направление &rarr; Проект &rarr; Материал">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-compass" />
+            </svg></span>
+          <span class="nav-label">Направления</span>
+        </a>
+        <a href="#tasks" class="nav-item" data-view="tasks" id="nav-desktop-tasks" aria-label="Задачи">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-clipboard" />
+            </svg></span>
+          <span class="nav-label">Задачи</span>
+        </a>
+        <a href="#calendar" class="nav-item" data-view="calendar" id="nav-desktop-calendar" aria-label="Календарь">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-calendar" />
+            </svg></span>
+          <span class="nav-label">Календарь</span>
+        </a>
+        <a href="#conferences" class="nav-item" data-view="conferences" id="nav-desktop-conferences"
+          aria-label="Конференции">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-video" />
+            </svg></span>
+          <span class="nav-label">Конференции</span>
+        </a>
+        <a href="#documents" class="nav-item" data-view="documents" id="nav-desktop-documents" aria-label="Документы">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-file-text" />
+            </svg></span>
+          <span class="nav-label">Документы</span>
+        </a>
+        <a href="#users" class="nav-item" data-view="users" id="nav-desktop-users" aria-label="Участники">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-users" />
+            </svg></span>
+          <span class="nav-label">Участники</span>
+        </a>
+        <button type="button" id="btn-sidebar-ai" class="nav-item sidebar-ai-item" aria-haspopup="dialog"
+          aria-expanded="false" aria-controls="ai-chat-window" aria-label="Открыть DocFlow AI">
+          <span class="nav-icon" aria-hidden="true"><svg class="df-ico" width="18" height="18" aria-hidden="true">
+              <use href="#df-ico-bot" />
+            </svg></span>
+          <span class="nav-label">DocFlow AI</span>
+        </button>
+
+        <!-- SIDEBAR BOOKMARKS (DEF-20: Настраиваемые закладки, например 'График уборки 220') -->
+        <div class="sidebar-bookmarks-wrapper" id="sidebar-bookmarks-wrapper"
+          style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 10px;">
+          <div class="sidebar-bookmarks-header"
+            style="display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; margin-bottom: 4px;">
+            <span class="sidebar-section-title"
+              style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;"><svg
+                class="df-ico" width="13" height="13" aria-hidden="true">
+                <use href="#df-ico-pin" />
+              </svg> Закладки</span>
+            <button type="button" id="btn-add-sidebar-bookmark" class="btn-icon"
+              title="Добавить документ или ссылку в меню"
+              style="width: 22px; height: 22px; font-size: 15px; font-weight: 700; line-height: 1; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-muted); background: var(--bg-subtle);">+</button>
+          </div>
+          <div id="sidebar-bookmarks-list" style="display: flex; flex-direction: column; gap: 2px;"></div>
+        </div>
+      </nav>
+
+      <div class="sidebar-pwa-wrapper" id="sidebar-pwa-wrapper">
+        <button type="button" id="btn-install-pwa"
+          class="btn btn-secondary btn-block pwa-install-btn pwa-install-trigger"
+          title="Установить приложение DocFlow на телефон" aria-label="Установить приложение на телефон">
+          <span class="pwa-install-icon" aria-hidden="true"><svg class="df-ico" width="17" height="17"
+              aria-hidden="true">
+              <use href="#df-ico-smartphone" />
+            </svg></span>
+          <span class="pwa-install-text">Установить на телефон</span>
+        </button>
+      </div>
+
+      <div class="sidebar-theme-wrapper" id="sidebar-theme-wrapper" aria-hidden="true"
+        style="padding: 10px 14px; border-top: 1px solid var(--border-color);">
+        <button id="btn-sidebar-theme-toggle" class="btn btn-secondary btn-block" aria-label="Сменить тему оформления"
+          style="display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 500; border-radius: 8px; padding: 8px 12px; width: 100%;">
+          <span id="sidebar-theme-icon" aria-hidden="true"><svg class="df-ico" width="16" height="16"
+              aria-hidden="true">
+              <use href="#df-ico-moon" />
+            </svg></span>
+          <span id="sidebar-theme-text">Тёмная тема</span>
+        </button>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar" id="user-avatar-initials" aria-hidden="true">AD</div>
+          <div class="user-details">
+            <span class="user-name" id="user-display-name">Администратор</span>
+            <span class="user-role" id="user-display-role">ADMIN</span>
+          </div>
+        </div>
+        <button id="btn-logout" class="btn-icon" title="Выйти из системы" aria-label="Выйти из системы"
+          style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MOBILE SIDEBAR BACKDROP -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden" aria-hidden="true"></div>
+
+    <!-- MAIN VIEWPORT -->
+    <main class="main-content">
+
+      <!-- TOP BAR -->
+      <header class="top-bar">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <button id="btn-toggle-sidebar" class="btn-icon mobile-toggle-btn" title="Открыть меню"
+            aria-label="Открыть меню навигации">
+            <span aria-hidden="true">☰</span>
+          </button>
+          <div class="page-header">
+            <h1 id="view-title">Дашборд</h1>
+            <p id="view-subtitle">Сводная информация по вашей рабочей среде</p>
+          </div>
+        </div>
+        <div class="top-bar-right">
+          <button type="button" id="btn-topbar-labspace" class="btn btn-secondary"
+            title="Перейти в LabSpace без повторного входа" aria-label="Перейти в LabSpace">
+            <span aria-hidden="true"><svg class="df-ico" width="15" height="15" aria-hidden="true">
+                <use href="#df-ico-flask" />
+              </svg></span>
+            <span class="theme-label">LabSpace</span>
+          </button>
+          <button id="btn-theme-toggle" class="btn btn-secondary theme-toggle-btn" title="Сменить тему оформления"
+            aria-label="Сменить тему оформления">
+            <span id="theme-toggle-icon" aria-hidden="true"><svg class="df-ico" width="16" height="16"
+                aria-hidden="true">
+                <use href="#df-ico-moon" />
+              </svg></span>
+            <span id="theme-toggle-text" class="theme-label">Тёмная</span>
+          </button>
+          <div class="top-bar-actions" id="top-bar-actions">
+            <!-- Dynamic context buttons injected per view -->
+          </div>
+        </div>
+      </header>
+
+      <!-- SCROLLABLE WORKSPACE + FOOTER -->
+      <div class="main-scroll-area">
+        <!-- DYNAMIC CONTENT VIEW -->
+        <div id="content-area" class="content-area" tabindex="-1">
+          <!-- Views will be mounted here by JS -->
+        </div>
+
+        <footer class="app-footer" role="contentinfo">
+          <div class="app-footer-brand">
+            <strong>DocFlow</strong> &bull; Корпоративный документооборот и поиск знаний
+          </div>
+          <div class="app-footer-links">
+            <a href="#documents">Документы</a>
+            <a href="#tasks">Задачи</a>
+            <a href="#materials">Направления</a>
+            <a href="#users">Команда</a>
+          </div>
+        </footer>
+      </div>
+
+      <!-- MOBILE BOTTOM NAVIGATION (TOUCH-FRIENDLY QUICK DOCK) -->
+      <nav class="mobile-bottom-nav" id="mobile-bottom-nav" role="navigation"
+        aria-label="Мобильная панель быстрого доступа" aria-hidden="true" hidden>
+        <a href="#dashboard" class="mobile-nav-item active" data-view="dashboard" id="nav-mobile-dashboard"
+          aria-label="Дашборд (быстрый доступ)">
+          <span class="mobile-nav-icon" aria-hidden="true"><svg class="df-ico" width="19" height="19"
+              aria-hidden="true">
+              <use href="#df-ico-bar-chart" />
+            </svg></span>
+          <span class="mobile-nav-label">Дашборд</span>
+        </a>
+        <a href="#tasks" class="mobile-nav-item" data-view="tasks" id="nav-mobile-tasks"
+          aria-label="Задачи (быстрый доступ)">
+          <span class="mobile-nav-icon" aria-hidden="true"><svg class="df-ico" width="19" height="19"
+              aria-hidden="true">
+              <use href="#df-ico-clipboard" />
+            </svg></span>
+          <span class="mobile-nav-label">Задачи</span>
+        </a>
+        <a href="#messenger" class="mobile-nav-item" data-view="messenger" id="nav-mobile-messenger"
+          aria-label="Чат (быстрый доступ)">
+          <span class="mobile-nav-icon" aria-hidden="true"><svg class="df-ico" width="19" height="19"
+              aria-hidden="true">
+              <use href="#df-ico-message-circle" />
+            </svg></span>
+          <span class="mobile-nav-label">Чат</span>
+        </a>
+        <a href="#mail" class="mobile-nav-item" data-view="mail" id="nav-mobile-mail"
+          aria-label="Почта (быстрый доступ)">
+          <span class="mobile-nav-icon" aria-hidden="true"><svg class="df-ico" width="19" height="19"
+              aria-hidden="true">
+              <use href="#df-ico-mail" />
+            </svg></span>
+          <span class="mobile-nav-label">Почта</span>
+        </a>
+        <button type="button" class="mobile-nav-item" id="btn-mobile-open-menu"
+          aria-label="Открыть полное меню навигации">
+          <span class="mobile-nav-icon" aria-hidden="true">☰</span>
+          <span class="mobile-nav-label">Меню</span>
+        </button>
+      </nav>
+    </main>
+
+  </div>
+
+  <!-- MODAL CONTAINER FOR DIALOGS -->
+  <div id="modal-container" class="modal-overlay hidden">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 id="modal-title">Создание</h3>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Form injected dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- AI ASSISTANT DIALOG (открывается из бокового меню) -->
+  <div id="ai-assistant-widget" class="ai-widget hidden">
+    <!-- CHAT POPUP WINDOW -->
+    <div id="ai-chat-window" class="ai-chat-window hidden" role="dialog" aria-label="AI-ассистент DocFlow">
+      <!-- HEADER -->
+      <div class="ai-chat-header">
+        <div class="ai-header-brand">
+          <div class="ai-header-avatar" aria-hidden="true"><svg class="df-ico" width="20" height="20"
+              aria-hidden="true">
+              <use href="#df-ico-bot" />
+            </svg></div>
+          <div class="ai-header-text">
+            <div class="ai-header-title">DocFlow AI</div>
+            <div id="ai-status-subtitle" class="ai-header-subtitle">Поиск по базе знаний и задачам</div>
+          </div>
+        </div>
+        <div class="ai-header-actions">
+          <button type="button" id="btn-expand-ai-chat" class="ai-icon-btn ai-expand-btn" title="Развернуть окно"
+            aria-label="Развернуть окно">⤢</button>
+          <button type="button" id="btn-clear-ai-chat" class="ai-icon-btn" title="Новый диалог"
+            aria-label="Очистить диалог">↺</button>
+          <button type="button" id="btn-close-ai-chat" class="ai-icon-btn" title="Закрыть (Esc)"
+            aria-label="Закрыть">&times;</button>
+        </div>
+      </div>
+
+      <!-- SCOPE SELECTOR -->
+      <div class="ai-scope-bar" role="group" aria-label="Область поиска">
+        <button type="button" class="ai-scope-btn active" data-scope="all" aria-pressed="true">Все источники</button>
+        <button type="button" class="ai-scope-btn" data-scope="document" aria-pressed="false">Документы</button>
+        <button type="button" class="ai-scope-btn" data-scope="project_material" aria-pressed="false">Материалы</button>
+        <button type="button" class="ai-scope-btn" data-scope="mail_attachment" aria-pressed="false">Почта</button>
+      </div>
+
+      <!-- MESSAGES SCROLL AREA -->
+      <div id="ai-chat-messages" class="ai-chat-messages" aria-live="polite"></div>
+
+      <!-- INPUT BAR -->
+      <form id="ai-chat-form" class="ai-input-bar">
+        <input type="text" id="ai-chat-input" class="ai-chat-input" placeholder="Спросите по базе знаний или задачам..."
+          autocomplete="off">
+        <button type="submit" id="btn-send-ai-chat" class="btn btn-primary ai-send-btn"
+          aria-label="Отправить вопрос">Отправить</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ONLYOFFICE API LOADER SCRIPT WILL BE INJECTED DYNAMICALLY -->
+  <script src="/js/icons.js?v=20261126_02"></script>
+  <script src="/js/api.js?v=20261126_01"></script>
+  <script src="/js/state.js?v=20261126_01"></script>
+  <script src="/js/modules/dashboard.js?v=20261126_01"></script>
+  <script src="/js/modules/mail.js?v=20261126_02"></script>
+  <script src="/js/modules/documents.js?v=20261126_01"></script>
+  <script src="/js/modules/calendar.js?v=20261126_01"></script>
+  <script src="/js/modules/tasks.js?v=20261126_01"></script>
+  <script src="/js/modules/conferences.js?v=20261126_01"></script>
+  <script src="/js/modules/projects.js?v=20261126_01"></script>
+  <script src="/js/modules/materials.js?v=20261126_01"></script>
+  <script src="/js/modules/users.js?v=20261126_01"></script>
+  <script src="/js/modules/messenger.js?v=20261126_03"></script>
+  <script src="/js/app.js?v=20261126_01"></script>
+</body>
+
+</html>

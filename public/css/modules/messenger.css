@@ -1,0 +1,189 @@
+/* ========================================================
+   MODERN MESSENGER STYLES (TELEGRAM / WHATSAPP PATTERN)
+   ======================================================== */
+.mobile-chat-back-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  padding: 6px;
+  border-radius: 50%;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  transition: background 0.15s ease;
+}
+
+.mobile-chat-back-btn:hover {
+  background: var(--bg-card-hover);
+}
+
+.chat-send-btn {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  background-color: var(--primary) !important;
+  color: #fff !important;
+  border: none !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+  transition: transform 0.15s ease, background-color 0.2s ease !important;
+}
+
+.chat-send-btn:hover {
+  transform: scale(1.05);
+  background-color: var(--primary-hover) !important;
+}
+
+.chat-send-btn:active {
+  transform: scale(0.95);
+}
+
+.messenger-input-row {
+  display: flex !important;
+  align-items: flex-end !important;
+  gap: 8px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.chat-attach-btn {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  background: var(--bg-card-hover) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-muted) !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.chat-attach-btn:hover {
+  color: var(--primary) !important;
+  border-color: var(--primary) !important;
+}
+
+.chat-input-textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  font-size: 13.5px;
+  line-height: 1.45;
+  min-height: 42px;
+  max-height: 120px;
+  padding: 10px 16px;
+  border-radius: 20px !important;
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  color: var(--text-main);
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.2s, background-color 0.2s;
+  overflow-y: auto;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.chat-input-textarea::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.chat-input-textarea:focus {
+  border-color: var(--primary);
+  background: var(--bg-card);
+}
+
+/* Mail Mobile Tabs and Floating Action Button (FAB) */
+.mail-mobile-tabs-bar {
+  display: none;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  gap: 8px;
+  align-items: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.mail-tab-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+  flex: 1 1 50%;
+  text-align: center;
+}
+
+.mail-tab-pill.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.mail-fab-compose {
+  display: none;
+  position: fixed;
+  bottom: calc(60px + env(safe-area-inset-bottom, 0px) + 16px);
+  right: 20px;
+  z-index: 1050;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 28px;
+  padding: 12px 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(37, 99, 235, 0.5);
+  font-size: 14px;
+  font-weight: 600;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.mail-fab-compose:hover {
+  background: var(--primary-hover);
+  transform: scale(1.04);
+}
+
+.mail-fab-compose:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 768px) {
+
+  /* DOCUMENTS RESPONSIVE */
+  .documents-layout {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .docs-folders-sidebar {
+    width: 100% !important;
+  }
+}

@@ -1,0 +1,160 @@
+/* ========================================================
+   DocFlow — Дизайн-токены и семантические пары LabSpace
+   Светлая тема по умолчанию (:root), Тёмная (:root[data-theme="dark"])
+   ======================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* Опорные дизайн-токены LabSpace */
+  --page: #f3f7f7;
+  --surface: #ffffff;
+  --surface-raised: #f8fbfa;
+  --chrome: #ffffff;
+  --sidebar: #f8fbfa;
+  --ink: #14283a;
+  --muted: #5d6f7c;
+  --line: #e1eaea;
+  --line-strong: #cddada;
+  --control-border: #7a8f95;
+
+  --accent: #0b8765;
+  --accent-hover: #097053;
+  --accent-soft: #e4f7f1;
+  --action: #109e77;
+  --action-hover: #0d8866;
+  --on-action: #ffffff;
+
+  /* Семантические пары статусов */
+  --status-neutral-ink: var(--muted);
+  --status-neutral-bg: #edf2f4;
+  --status-info-ink: #24527f;
+  --status-info-bg: #e6f0fb;
+  --status-success-ink: var(--accent);
+  --status-success-bg: var(--accent-soft);
+  --status-warning-ink: #8a5a00;
+  --status-warning-bg: #fff6e0;
+  --status-danger-ink: #a42a2a;
+  --status-danger-bg: #fdecec;
+
+  /* Типографика, скругления, тени и геометрия каркаса */
+  --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-preview: "Source Serif 4", Georgia, serif;
+
+  --radius-control: 12px;
+  --radius-action: 14px;
+  --radius-panel: 18px;
+  --radius-popup: 20px;
+  --radius-auth: 26px;
+  --radius-pill: 999px;
+
+  --shadow-panel: 0 1px 2px rgb(16 42 50 / 4%), 0 10px 28px rgb(16 42 50 / 6%);
+  --shadow-action: 0 5px 12px rgb(16 158 119 / 22%);
+  --shadow-modal: 0 22px 48px rgb(16 42 50 / 18%), 0 0 0 1px var(--line);
+
+  --topbar-height: 64px;
+  --footer-min-height: 68px;
+  --sidebar-width: 232px;
+  --chrome-max-width: 1680px;
+  --chrome-gutter: clamp(16px, 3vw, 42px);
+
+  --motion-control: 150ms;
+  --motion-popup: 180ms;
+  --motion-drawer: 200ms;
+  --motion-theme: 280ms;
+
+  /* Фон экрана входа и рабочей области (светлая сцена Дубны + плавный градиент от --page) */
+  --bg-photo: url('/assets/bg-light.jpg?v=20261125_03');
+  --bg-auth-scrim: linear-gradient(105deg, rgba(243, 247, 247, 0.92) 0%, rgba(243, 247, 247, 0.62) 46%, rgba(243, 247, 247, 0.18) 100%);
+  --bg-app-scrim: linear-gradient(180deg, rgba(243, 247, 247, 0.76) 0%, rgba(243, 247, 247, 0.58) 50%, rgba(243, 247, 247, 0.72) 100%);
+
+  /* Алиасы обратной совместимости для модулей */
+  --bg-dark: var(--page);
+  --bg-card: var(--surface);
+  --bg-card-solid: var(--surface);
+  --bg-card-hover: var(--surface-raised);
+  --bg-subtle: var(--surface-raised);
+  --bg-hover: var(--surface-raised);
+  --bg-input: var(--surface);
+  --border-color: var(--line);
+  --border-input: var(--control-border);
+  --text-main: var(--ink);
+  --text-muted: var(--muted);
+  --primary: var(--action);
+  --primary-hover: var(--action-hover);
+  --primary-rgb: 16, 158, 119;
+  --secondary-accent: var(--status-info-ink);
+  --secondary-accent-rgb: 36, 82, 127;
+  --success: var(--status-success-ink);
+  --warning: var(--status-warning-ink);
+  --danger: var(--status-danger-ink);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-panel);
+  --radius-lg: var(--radius-popup);
+  --shadow-card: var(--shadow-panel);
+  --shadow-card-hover: 0 4px 12px rgb(16 42 50 / 8%), 0 12px 30px rgb(16 42 50 / 9%);
+  --font-family: var(--font-ui);
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-bg-sidebar: var(--sidebar);
+  --glass-border: var(--line);
+  --glass-highlight: transparent;
+  --skeleton-base: #e7efef;
+  --skeleton-shine: #f2f7f7;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --page: #0d1820;
+  --surface: #152630;
+  --surface-raised: #1d333e;
+  --chrome: #12222c;
+  --sidebar: #12222c;
+  --ink: #e8f2f4;
+  --muted: #afc2ca;
+  --line: #304651;
+  --line-strong: #49616d;
+  --control-border: #6f8995;
+
+  --accent: #90edd0;
+  --accent-hover: #bbf6e4;
+  --accent-soft: #1b4842;
+  --action: #149674;
+  --action-hover: #19ab85;
+  --on-action: #ffffff;
+
+  --status-neutral-ink: var(--muted);
+  --status-neutral-bg: var(--surface-raised);
+  --status-info-ink: #a3d4fb;
+  --status-info-bg: #19354a;
+  --status-success-ink: var(--accent);
+  --status-success-bg: var(--accent-soft);
+  --status-warning-ink: #f3cd84;
+  --status-warning-bg: #3b3020;
+  --status-danger-ink: #ffadb5;
+  --status-danger-bg: #41242c;
+
+  --shadow-panel: 0 8px 28px rgb(0 0 0 / 20%);
+  --shadow-action: 0 6px 16px rgb(0 0 0 / 24%);
+  --shadow-modal: 0 24px 56px rgb(0 0 0 / 45%), 0 0 0 1px var(--line);
+
+  --bg-photo: url('/assets/bg-dark.jpg?v=20261125_03');
+  --bg-auth-scrim: linear-gradient(105deg, rgba(13, 24, 32, 0.88) 0%, rgba(13, 24, 32, 0.56) 48%, rgba(13, 24, 32, 0.22) 100%);
+  --bg-app-scrim: linear-gradient(180deg, rgba(13, 24, 32, 0.72) 0%, rgba(13, 24, 32, 0.54) 50%, rgba(13, 24, 32, 0.68) 100%);
+
+  --primary-rgb: 144, 237, 208;
+  --secondary-accent-rgb: 163, 212, 251;
+  --shadow-card-hover: 0 10px 32px rgb(0 0 0 / 28%);
+  --skeleton-base: #1b2f3b;
+  --skeleton-shine: #243d4b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-control: 0ms;
+    --motion-popup: 0ms;
+    --motion-drawer: 0ms;
+    --motion-theme: 0ms;
+  }
+}
