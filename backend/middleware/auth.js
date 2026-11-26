@@ -86,7 +86,9 @@ function authenticateToken(req, res, next) {
 
       req.user = {
         ...decodedUser,
+        email: freshUser.email,
         role: (freshUser.role || 'USER').toUpperCase(),
+        role_id: freshUser.role_id || decodedUser.role_id,
         role_code: freshUser.role_code || decodedUser.role_code || (freshUser.role === 'ADMIN' ? 'admin' : 'employee'),
         department: freshUser.department,
         full_name: freshUser.full_name,
@@ -124,7 +126,9 @@ function authenticateTokenOptional(req, res, next) {
       if (freshUser) {
         req.user = {
           ...decodedUser,
+          email: freshUser.email,
           role: (freshUser.role || 'USER').toUpperCase(),
+          role_id: freshUser.role_id || decodedUser.role_id,
           role_code: freshUser.role_code || decodedUser.role_code || (freshUser.role === 'ADMIN' ? 'admin' : 'employee'),
           department: freshUser.department,
           full_name: freshUser.full_name,

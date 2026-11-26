@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { authenticateToken, requireAdmin, invalidateUserCache } = require('../middleware/auth');
+const authRouter = require('./auth');
 const { getOrganizationTree, getSubordinateUserIds, wouldCreateHierarchyCycle, invalidateHierarchyCache } = require('../utils/hierarchy');
 
 // Вспомогательная проверка и разрешение отдела по справочнику departments
@@ -61,8 +62,8 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/users/stats - Detailed statistics per employee and department (O(U+T+D) via pre-aggregated CTEs)
-router.get('/stats', authenticateToken, async (req, res) => {
+// GET /api/users/stats - Detailed statistics per employee and department (Admin only)
+router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const usersResult = await db.query(`
       WITH assigned_stats AS (
@@ -357,18 +358,22 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
 
-    const assignedRole = (role === 'ADMIN') ? 'ADMIN' : 'USER';
+    const assignedRole = (String(role || '').trim().toUpperCase() === 'ADMIN') ? 'ADMIN' : 'USER';
+    const roleCode = assignedRole === 'ADMIN' ? 'admin' : 'employee';
+    const roleRow = await db.query('SELECT id FROM roles WHERE code = $1 LIMIT 1', [roleCode]);
+    const assignedRoleId = roleRow.rows[0]?.id || null;
     const passHash = await bcrypt.hash(password, 10);
 
     const result = await db.query(`
-      INSERT INTO users (email, password_hash, full_name, role, department, department_id, position, manager_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, email, full_name, role, department, department_id, position, manager_id, created_at
+      INSERT INTO users (email, password_hash, full_name, role, role_id, department, department_id, position, manager_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id, email, full_name, role, role_id, department, department_id, position, manager_id, totp_enabled, created_at
     `, [
       cleanEmail,
       passHash,
       full_name.trim(),
       assignedRole,
+      assignedRoleId,
       deptRes.department,
       deptRes.department_id,
       position ? position.trim() : 'Сотрудник',
@@ -385,18 +390,50 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 // PATCH /api/users/:id
 router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
+    const targetId = parseInt(req.params.id, 10);
+    if (isNaN(targetId)) {
+      return res.status(400).json({ error: 'Некорректный ID пользователя' });
+    }
+
+    const existingRes = await db.query(
+      `SELECT u.id, u.email, u.full_name, u.role, u.role_id, u.department, u.totp_enabled, r.code AS role_code
+       FROM users u
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.id = $1`,
+      [targetId]
+    );
+    if (existingRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    const targetUser = existingRes.rows[0];
+    const targetIsAdmin = (targetUser.role || '').toUpperCase() === 'ADMIN' || targetUser.role_code === 'admin';
+
     const { full_name, email, role, department, department_id, position, manager_id, password } = req.body;
 
     const updates = [];
-    const params = [id];
+    const params = [targetId];
 
-    if (full_name) {
-      params.push(full_name.trim());
+    if (full_name !== undefined) {
+      const cleanName = String(full_name).trim();
+      if (!cleanName) {
+        return res.status(400).json({ error: 'ФИО сотрудника не может быть пустым' });
+      }
+      params.push(cleanName);
       updates.push(`full_name = $${params.length}`);
     }
-    if (email) {
-      params.push(email.trim().toLowerCase());
+    if (email !== undefined) {
+      const cleanEmail = String(email).trim().toLowerCase();
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        return res.status(400).json({ error: 'Укажите корректный email' });
+      }
+      const dupRes = await db.query(
+        'SELECT id FROM users WHERE LOWER(email) = $1 AND id <> $2',
+        [cleanEmail, targetId]
+      );
+      if (dupRes.rows.length > 0) {
+        return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
+      }
+      params.push(cleanEmail);
       updates.push(`email = $${params.length}`);
     }
     if (department !== undefined || department_id !== undefined) {
@@ -410,7 +447,7 @@ router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
       updates.push(`department_id = $${params.length}`);
     }
     if (position !== undefined) {
-      params.push(position.trim());
+      params.push(String(position).trim());
       updates.push(`position = $${params.length}`);
     }
     if (manager_id !== undefined) {
@@ -421,10 +458,10 @@ router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
       }
 
       if (parsedManagerId !== null) {
-        if (parseInt(id, 10) === parsedManagerId) {
+        if (targetId === parsedManagerId) {
           return res.status(400).json({ error: 'Сотрудник не может быть руководителем самого себя' });
         }
-        const isCycle = await wouldCreateHierarchyCycle(id, parsedManagerId);
+        const isCycle = await wouldCreateHierarchyCycle(targetId, parsedManagerId);
         if (isCycle) {
           return res.status(400).json({ error: 'Нельзя назначить руководителем сотрудника, который уже находится в подчинении (циклическая иерархия)' });
         }
@@ -432,10 +469,19 @@ router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
       params.push(parsedManagerId);
       updates.push(`manager_id = $${params.length}`);
     }
-    if (role) {
-      const cleanRole = (role === 'ADMIN') ? 'ADMIN' : 'USER';
+    if (role !== undefined && role !== null && String(role).trim() !== '') {
+      const cleanRole = (String(role).trim().toUpperCase() === 'ADMIN') ? 'ADMIN' : 'USER';
+      if (targetIsAdmin && cleanRole !== 'ADMIN') {
+        return res.status(403).json({ error: 'Нельзя понизить роль администратора (ни себе, ни другому администратору)' });
+      }
       params.push(cleanRole);
       updates.push(`role = $${params.length}`);
+      const roleCode = cleanRole === 'ADMIN' ? 'admin' : 'employee';
+      const roleRow = await db.query('SELECT id FROM roles WHERE code = $1 LIMIT 1', [roleCode]);
+      if (roleRow.rows.length > 0) {
+        params.push(roleRow.rows[0].id);
+        updates.push(`role_id = $${params.length}`);
+      }
     }
     if (password && String(password).trim().length > 0) {
       const hash = await bcrypt.hash(String(password).trim(), 10);
@@ -448,7 +494,7 @@ router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     const result = await db.query(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = $1 RETURNING id, email, full_name, role, department, department_id, position, manager_id, created_at`,
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $1 RETURNING id, email, full_name, role, role_id, department, department_id, position, manager_id, totp_enabled, created_at`,
       params
     );
 
@@ -456,10 +502,26 @@ router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
 
-    invalidateUserCache(id);
+    invalidateUserCache(targetId);
     invalidateHierarchyCache();
-    res.json(result.rows[0]);
+
+    const updatedUser = result.rows[0];
+    if (targetId === parseInt(req.user.id, 10)) {
+      const freshRes = await db.query(`${authRouter.USER_WITH_ROLE_SQL} WHERE u.id = $1`, [targetId]);
+      if (freshRes.rows.length > 0) {
+        const { token } = authRouter.issueSessionToken(req, res, freshRes.rows[0]);
+        updatedUser.refreshedToken = token;
+      }
+    }
+
+    res.json(updatedUser);
   } catch (err) {
+    if (err.code === '42501') {
+      return res.status(403).json({ error: err.message });
+    }
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
+    }
     res.status(500).json({ error: 'Ошибка обновления пользователя: ' + err.message });
   }
 });
@@ -467,17 +529,37 @@ router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
 // DELETE /api/users/:id
 router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    if (parseInt(id, 10) === req.user.id) {
-      return res.status(400).json({ error: 'Нельзя удалить собственный аккаунт Администратора' });
+    const targetId = parseInt(req.params.id, 10);
+    if (isNaN(targetId)) {
+      return res.status(400).json({ error: 'Некорректный ID пользователя' });
+    }
+    if (targetId === parseInt(req.user.id, 10)) {
+      return res.status(403).json({ error: 'Нельзя удалить собственный аккаунт Администратора' });
     }
 
-    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+    const targetRes = await db.query(
+      `SELECT u.id, u.role, r.code AS role_code
+       FROM users u LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.id = $1`,
+      [targetId]
+    );
+    if (targetRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    const tUser = targetRes.rows[0];
+    if ((tUser.role || '').toUpperCase() === 'ADMIN' || tUser.role_code === 'admin') {
+      return res.status(403).json({ error: 'Нельзя удалить учётную запись Администратора' });
+    }
+
+    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id', [targetId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Пользователь не найден' });
-    invalidateUserCache(id);
+    invalidateUserCache(targetId);
     invalidateHierarchyCache();
     res.json({ message: 'Пользователь успешно удален' });
   } catch (err) {
+    if (err.code === '42501') {
+      return res.status(403).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Ошибка удаления пользователя: ' + err.message });
   }
 });
@@ -488,6 +570,20 @@ router.post('/:id/reset-2fa', authenticateToken, requireAdmin, async (req, res) 
     const targetId = parseInt(req.params.id, 10);
     if (isNaN(targetId)) {
       return res.status(400).json({ error: 'Некорректный ID пользователя' });
+    }
+
+    const targetRes = await db.query(
+      `SELECT u.id, u.role, r.code AS role_code
+       FROM users u LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.id = $1`,
+      [targetId]
+    );
+    if (targetRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    const tUser = targetRes.rows[0];
+    if ((tUser.role || '').toUpperCase() === 'ADMIN' || tUser.role_code === 'admin') {
+      return res.status(403).json({ error: 'Сброс 2FA запрещён для учётных записей администраторов' });
     }
 
     const updated = await db.withTransaction(async (client) => {

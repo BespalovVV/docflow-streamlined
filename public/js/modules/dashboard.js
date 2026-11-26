@@ -3,14 +3,21 @@
 
 window.DashboardModule = (function() {
   function updateHeaderAndActions(panelEl) {
-    AppState.setHeader('Дашборд руководителя', 'Аналитика эффективности компании, контроль сроков и статус проектов');
+    const currentUser = AppState.getCurrentUser();
+    const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role_code === 'admin';
+    AppState.setHeader(
+      isAdmin ? 'Дашборд руководителя' : 'Рабочий стол',
+      isAdmin ? 'Аналитика эффективности компании, контроль сроков и статус проектов' : 'Сводка по вашим задачам и активным проектам'
+    );
     AppState.setTopBarActions(`
+      ${isAdmin ? `
       <button class="btn btn-secondary" id="btn-export-tasks-report" title="Скачать подробный реестр задач в Excel (CSV)">
         <svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-inbox"/></svg> Экспорт задач (Excel)
       </button>
       <button class="btn btn-secondary" id="btn-export-summary-report" title="Скачать сводку эффективности отделов">
         <svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-bar-chart"/></svg> KPI отделов
       </button>
+      ` : ''}
       <button class="btn btn-primary" id="btn-refresh-dashboard">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="23 4 23 10 17 10"></polyline>

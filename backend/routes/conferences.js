@@ -77,7 +77,7 @@ router.get('/formats', authenticateToken, async (req, res) => {
 });
 
 // POST /api/conferences/formats
-router.post('/formats', authenticateToken, async (req, res) => {
+router.post('/formats', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { name } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Укажите название формата' });

@@ -200,49 +200,53 @@ async function initDb() {
 
     const adminHash = await bcrypt.hash('admin123', 10);
 
-    await client.query(`
-      INSERT INTO users (id, email, password_hash, full_name, role, department) VALUES
-      (1, 'admin@docflow.local', $1, 'Администратор Системы', 'ADMIN', 'Управление')
-      ON CONFLICT (email) DO NOTHING
-    `, [adminHash]);
+    const hasAdminRes = await client.query("SELECT 1 FROM users WHERE id = 1 OR role = 'ADMIN' LIMIT 1");
+    if (hasAdminRes.rows.length === 0) {
+      await client.query(`
+        INSERT INTO users (id, email, password_hash, full_name, role, department) VALUES
+        (1, 'admin@docflow.local', $1, 'Администратор Системы', 'ADMIN', 'Управление')
+        ON CONFLICT (email) DO NOTHING
+      `, [adminHash]);
+    }
     await client.query("SELECT setval('users_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM users), 1))");
 
     // Sync users with roles
     await client.query(`
       UPDATE users SET role_id = (SELECT id FROM roles WHERE code = 'admin')
-      WHERE (role = 'ADMIN' OR email = 'admin@docflow.local') AND (role_id IS NULL OR role_id != (SELECT id FROM roles WHERE code = 'admin'))
+      WHERE role = 'ADMIN' AND (role_id IS NULL OR role_id != (SELECT id FROM roles WHERE code = 'admin'))
     `);
     await client.query(`
       UPDATE users SET role_id = (SELECT id FROM roles WHERE code = 'employee')
       WHERE role_id IS NULL
     `);
 
-    // Ensure Test Users from TEST_USERS.txt exist and have correct passwords and hierarchy
+    // Ensure Test Users exist only on fresh empty DB (do not overwrite renamed admin email)
     try {
-      const adminHash = await bcrypt.hash('admin123', 10);
-      const testHash = await bcrypt.hash('Test1234!', 10);
+      const existingCntRes = await client.query('SELECT COUNT(*)::int AS cnt FROM users');
+      if ((existingCntRes.rows[0]?.cnt || 0) <= 1) {
+        const testHash = await bcrypt.hash('Test1234!', 10);
 
-      await client.query(`
-        INSERT INTO users (email, password_hash, full_name, role, department, position) VALUES
-        ('admin@docflow.local', $1, 'Администратор Системы', 'ADMIN', 'Управление', 'Системный администратор'),
-        ('ivanov@docflow.local', $2, 'Иван Иванов', 'USER', 'Отдел разработки', 'Ведущий разработчик'),
-        ('petrova@docflow.local', $2, 'Анна Петрова', 'USER', 'Юридический отдел', 'Юрист'),
-        ('sidorov@docflow.local', $2, 'Алексей Сидоров', 'USER', 'Бухгалтерия', 'Бухгалтер'),
-        ('kuznetsova@docflow.local', $2, 'Елена Кузнецова', 'USER', 'Маркетинг', 'Маркетолог'),
-        ('smirnov@docflow.local', $2, 'Дмитрий Смирнов', 'USER', 'Отдел продаж', 'Менеджер по продажам')
-        ON CONFLICT (email) DO UPDATE SET
-          full_name = EXCLUDED.full_name,
-          role = EXCLUDED.role,
-          department = EXCLUDED.department,
-          position = EXCLUDED.position;
-      `, [adminHash, testHash]);
+        await client.query(`
+          INSERT INTO users (email, password_hash, full_name, role, department, position) VALUES
+          ('ivanov@docflow.local', $1, 'Иван Иванов', 'USER', 'Отдел разработки', 'Ведущий разработчик'),
+          ('petrova@docflow.local', $1, 'Анна Петрова', 'USER', 'Юридический отдел', 'Юрист'),
+          ('sidorov@docflow.local', $1, 'Алексей Сидоров', 'USER', 'Бухгалтерия', 'Бухгалтер'),
+          ('kuznetsova@docflow.local', $1, 'Елена Кузнецова', 'USER', 'Маркетинг', 'Маркетолог'),
+          ('smirnov@docflow.local', $1, 'Дмитрий Смирнов', 'USER', 'Отдел продаж', 'Менеджер по продажам')
+          ON CONFLICT (email) DO UPDATE SET
+            full_name = EXCLUDED.full_name,
+            role = EXCLUDED.role,
+            department = EXCLUDED.department,
+            position = EXCLUDED.position;
+        `, [testHash]);
 
-      await client.query(`
-        UPDATE users SET role_id = (SELECT id FROM roles WHERE code = 'admin') WHERE role = 'ADMIN';
-        UPDATE users SET role_id = (SELECT id FROM roles WHERE code = 'employee') WHERE role = 'USER' AND role_id IS NULL;
-        UPDATE users SET manager_id = 1 WHERE id != 1 AND manager_id IS NULL;
-      `);
-      console.log('[PostgreSQL] ✅ Verified 6 standard test users from TEST_USERS.txt');
+        await client.query(`
+          UPDATE users SET role_id = (SELECT id FROM roles WHERE code = 'admin') WHERE role = 'ADMIN';
+          UPDATE users SET role_id = (SELECT id FROM roles WHERE code = 'employee') WHERE role = 'USER' AND role_id IS NULL;
+          UPDATE users SET manager_id = 1 WHERE id != 1 AND manager_id IS NULL;
+        `);
+        console.log('[PostgreSQL] ✅ Seeded initial standard test users');
+      }
     } catch (errUsers) {
       console.warn('[PostgreSQL] Notice during test users verification:', errUsers.message);
     }

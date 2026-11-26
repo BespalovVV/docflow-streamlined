@@ -42,6 +42,9 @@ window.UsersModule = (function() {
     updateHeaderAndActions(containerEl);
     const currentUser = AppState.getCurrentUser();
     const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role_code === 'admin';
+    if (!isAdmin && activeTab === 'stats') {
+      activeTab = 'list';
+    }
 
     containerEl.innerHTML = `
       <div class="card" style="padding: 10px 16px; margin-bottom: 20px; display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
@@ -55,9 +58,11 @@ window.UsersModule = (function() {
           <button class="btn btn-sm ${activeTab === 'hierarchy' ? 'btn-primary' : 'btn-secondary'}" id="tab-users-hierarchy">
             <svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-sitemap"/></svg> Иерархия
           </button>
-          <button class="btn btn-sm ${activeTab === 'stats' ? 'btn-primary' : 'btn-secondary'}" id="tab-users-stats">
-            <svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-bar-chart"/></svg> Статистика и загрузка
-          </button>
+          ${isAdmin ? `
+            <button class="btn btn-sm ${activeTab === 'stats' ? 'btn-primary' : 'btn-secondary'}" id="tab-users-stats">
+              <svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-bar-chart"/></svg> Статистика и загрузка
+            </button>
+          ` : ''}
         </div>
       </div>
       <div id="users-content-area">
@@ -242,10 +247,10 @@ window.UsersModule = (function() {
                   <div style="display: flex; gap: 6px; border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 14px; flex-wrap: wrap;">
                     <button class="btn btn-secondary btn-sm edit-user-btn" data-id="${u.id}" style="flex: 1;"><svg class='df-ico' width='15' height='15' aria-hidden='true'><use href='#df-ico-pencil'/></svg> Редактировать</button>
                     <button class="btn btn-secondary btn-sm assign-dept-btn" data-id="${u.id}" title="Назначить или сменить отдел"><svg class='df-ico' width='15' height='15' aria-hidden='true'><use href='#df-ico-building'/></svg> Отдел</button>
-                    ${u.totp_enabled ? `
+                    ${u.totp_enabled && !isUserAdmin ? `
                       <button class="btn btn-secondary btn-sm reset-2fa-btn" data-id="${u.id}" title="Аварийный сброс 2FA пользователя" style="color: #f59e0b;"><svg class='df-ico' width='15' height='15' aria-hidden='true'><use href='#df-ico-refresh'/></svg> 2FA</button>
                     ` : ''}
-                    ${u.id !== currentUser?.id ? `
+                    ${!isUserAdmin && u.id !== currentUser?.id ? `
                       <button class="btn btn-secondary btn-sm delete-user-btn" data-id="${u.id}" style="color: var(--danger);"><svg class='df-ico' width='15' height='15' aria-hidden='true'><use href='#df-ico-trash'/></svg></button>
                     ` : ''}
                   </div>
@@ -1144,10 +1149,19 @@ window.UsersModule = (function() {
 
         <div class="form-group">
           <label>Роль в системе</label>
-          <select id="user-role">
-            <option value="USER" ${isEdit && userToEdit.role === 'USER' ? 'selected' : ''}>Пользователь (USER)</option>
-            <option value="ADMIN" ${isEdit && userToEdit.role === 'ADMIN' ? 'selected' : ''}>Администратор (ADMIN)</option>
-          </select>
+          ${isEdit && userToEdit.role === 'ADMIN' ? `
+            <select id="user-role" disabled title="Понижение роли администратора запрещено">
+              <option value="ADMIN" selected>Администратор (ADMIN)</option>
+            </select>
+            <small class="text-muted" style="display:block; margin-top:4px; font-size:11px;">
+              Роль администратора защищена от понижения (себе и другим администраторам). Email и профиль менять можно.
+            </small>
+          ` : `
+            <select id="user-role">
+              <option value="USER" ${isEdit && userToEdit.role === 'USER' ? 'selected' : ''}>Пользователь (USER)</option>
+              <option value="ADMIN" ${isEdit && userToEdit.role === 'ADMIN' ? 'selected' : ''}>Администратор (ADMIN)</option>
+            </select>
+          `}
         </div>
 
         <button type="submit" id="btn-submit-user-form" class="btn btn-primary btn-block" style="margin-top: 10px;">
@@ -1175,11 +1189,13 @@ window.UsersModule = (function() {
         return;
       }
 
+      const currentUser = AppState.getCurrentUser();
+      const targetIsAdmin = isEdit && (userToEdit.role === 'ADMIN' || userToEdit.role_code === 'admin');
       const managerVal = document.getElementById('user-manager').value;
       const payload = {
         full_name: document.getElementById('user-fullname').value.trim(),
         email: document.getElementById('user-email').value.trim(),
-        role: document.getElementById('user-role').value,
+        role: targetIsAdmin ? 'ADMIN' : document.getElementById('user-role').value,
         department_id: deptVal.department_id,
         department: deptVal.department,
         position: document.getElementById('user-position').value.trim(),
@@ -1192,7 +1208,19 @@ window.UsersModule = (function() {
 
       try {
         if (isEdit) {
-          await API.updateUser(userToEdit.id, payload);
+          const updated = await API.updateUser(userToEdit.id, payload);
+          if (currentUser && parseInt(userToEdit.id, 10) === parseInt(currentUser.id, 10)) {
+            if (updated?.refreshedToken) {
+              API.setToken(updated.refreshedToken);
+            }
+            try {
+              const me = await API.getMe();
+              AppState.setCurrentUser(me);
+              if (typeof window.updateDocflowUserUI === 'function') {
+                window.updateDocflowUserUI();
+              }
+            } catch (e) {}
+          }
           AppState.showAlert('Данные участника обновлены', 'success');
         } else {
           await API.createUser(payload);

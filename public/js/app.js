@@ -1540,6 +1540,7 @@
       mobileDashboardNav.style.display = isUserAdmin ? '' : 'none';
     }
   }
+  window.updateDocflowUserUI = updateUserUI;
 
   function switchView(viewName) {
     AppState.closeModal();

@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { JWT_SECRET, authenticateToken, authenticateTokenOptional } = require('../middleware/auth');
+const { JWT_SECRET, authenticateToken, authenticateTokenOptional, requireAdmin } = require('../middleware/auth');
 const { appCache } = require('../utils/cache');
 const authRouter = require('./auth');
 
@@ -406,10 +406,7 @@ router.post('/link', authenticateToken, async (req, res) => {
 });
 
 // POST /api/sso/admin/link - Привязка администратором вручную
-router.post('/admin/link', authenticateToken, async (req, res) => {
-  if ((req.user.role || '').toUpperCase() !== 'ADMIN') {
-    return res.status(403).json({ error: 'Требуются права администратора' });
-  }
+router.post('/admin/link', authenticateToken, requireAdmin, async (req, res) => {
   const userId = parseInt(req.body?.user_id, 10);
   const externalUserId = String(req.body?.external_user_id || '').trim();
   const provider = String(req.body?.provider || PROVIDER_LABSPACE).trim();
