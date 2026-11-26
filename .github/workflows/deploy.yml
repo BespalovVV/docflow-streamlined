@@ -26,7 +26,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: docflow
           POSTGRES_PASSWORD: docflow_secure_pass
@@ -103,6 +103,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 🔑 Подключение по SSH и запуск бесшовного обновления
+        if: ${{ secrets.PROD_SERVER_HOST != '' && secrets.PROD_SERVER_USER != '' && secrets.PROD_SERVER_SSH_KEY != '' }}
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PROD_SERVER_HOST }}
@@ -117,3 +118,8 @@ jobs:
             cd /opt/docflow-streamlined || cd ~/docflow-streamlined
             chmod +x deploy.sh
             ./deploy.sh
+
+      - name: ℹ️ Деплой пропущен (секреты Production-сервера ещё не заданы)
+        if: ${{ secrets.PROD_SERVER_HOST == '' || secrets.PROD_SERVER_USER == '' || secrets.PROD_SERVER_SSH_KEY == '' }}
+        run: |
+          echo "Добавьте PROD_SERVER_HOST, PROD_SERVER_USER и PROD_SERVER_SSH_KEY в Settings -> Secrets -> Actions для автодеплоя по SSH."
