@@ -4,6 +4,8 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
+const { generateTotp } = require('../utils/totp');
+const { decrypt } = require('../utils/crypto');
 
 const BASE_URL = process.env.TEST_APP_URL || 'http://localhost:3000';
 
@@ -39,6 +41,37 @@ async function apiRequest(endpoint, options = {}) {
     data,
     headers: res.headers
   };
+}
+
+async function loginWith2FA(email, password) {
+  const loginRes = await apiRequest('/api/auth/login', {
+    method: 'POST',
+    body: { email, password }
+  });
+  if (loginRes.status !== 200) return loginRes;
+  if (loginRes.data && loginRes.data.token) return loginRes;
+
+  if (loginRes.data && loginRes.data.requires2FASetup && loginRes.data.manualSecret) {
+    const code = generateTotp(loginRes.data.manualSecret);
+    return apiRequest('/api/auth/2fa/confirm-setup', {
+      method: 'POST',
+      body: { preAuthToken: loginRes.data.preAuthToken, code }
+    });
+  }
+
+  if (loginRes.data && loginRes.data.requires2FA) {
+    const uRes = await db.query('SELECT totp_secret_enc FROM users WHERE LOWER(email) = $1', [email.trim().toLowerCase()]);
+    if (uRes.rows.length > 0 && uRes.rows[0].totp_secret_enc) {
+      const secret = decrypt(uRes.rows[0].totp_secret_enc);
+      const code = generateTotp(secret);
+      return apiRequest('/api/auth/2fa/verify', {
+        method: 'POST',
+        body: { preAuthToken: loginRes.data.preAuthToken, code }
+      });
+    }
+  }
+
+  return loginRes;
 }
 
 async function runFullSystemScenariosTests() {
@@ -88,10 +121,7 @@ async function runFullSystemScenariosTests() {
     console.log('\n🔑 [Сценарий 1] Аутентификация и проверка безопасности доступа:');
 
     // 1.1 Успешный вход под Администратором
-    const loginRes = await apiRequest('/api/auth/login', {
-      method: 'POST',
-      body: { email: 'admin@docflow.local', password: 'admin123' }
-    });
+    const loginRes = await loginWith2FA('admin@docflow.local', 'admin123');
     assert.strictEqual(loginRes.status, 200, 'Вход администратора должен возвращать HTTP 200');
     assert.ok(loginRes.data && loginRes.data.token, 'Ответ должен содержать JWT токен');
     assert.strictEqual(loginRes.data.user.role, 'ADMIN', 'Роль пользователя должна быть ADMIN');
@@ -142,7 +172,7 @@ async function runFullSystemScenariosTests() {
         email: 'qa_colleague_test@docflow.local',
         password: 'ColleaguePassword123!',
         role: 'USER',
-        department: 'Отдел контроля качества'
+        department: 'Отдел разработки'
       }
     });
     assert.strictEqual(newColleagueRes.status, 201, 'Создание пользователя должно возвращать 201 Created');
@@ -151,10 +181,7 @@ async function runFullSystemScenariosTests() {
     console.log(`  ✅ 2.2. Создание новой учетной записи сотрудника (ID: ${colleagueId}) — Успешно`);
 
     // 2.3 Авторизация созданного сотрудника
-    const colleagueLogin = await apiRequest('/api/auth/login', {
-      method: 'POST',
-      body: { email: 'qa_colleague_test@docflow.local', password: 'ColleaguePassword123!' }
-    });
+    const colleagueLogin = await loginWith2FA('qa_colleague_test@docflow.local', 'ColleaguePassword123!');
     assert.strictEqual(colleagueLogin.status, 200);
     colleagueToken = colleagueLogin.data.token;
     assert.strictEqual(colleagueLogin.data.user.role, 'USER');
@@ -173,7 +200,7 @@ async function runFullSystemScenariosTests() {
     const updateColleague = await apiRequest(`/api/users/${colleagueId}`, {
       method: 'PATCH',
       headers: { 'Authorization': `Bearer ${adminToken}` },
-      body: { department: 'Департамент инноваций и QA' }
+      body: { department: 'Юридический отдел' }
     });
     assert.strictEqual(updateColleague.status, 200);
     console.log('  ✅ 2.5. Обновление профиля сотрудника администратором — Успешно');

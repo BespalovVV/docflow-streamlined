@@ -113,8 +113,9 @@ async function runComprehensiveQATests() {
 
   // 2.2 Поврежденный бинарный буфер (псевдо-PDF с битыми заголовками)
   const corruptPdf = Buffer.from('%PDF-1.7\nstream\n\x00\xFF\xAA\xBB\xCC\xDDendstream\n%%EOF');
-  const corruptPdfRes = extractFromPdf(corruptPdf);
-  assert.strictEqual(corruptPdfRes, '', 'Поврежденный PDF возвращает пустую строку, не выбрасывая ошибку');
+  const corruptPdfRes = await extractFromPdf(corruptPdf);
+  const corruptPdfText = typeof corruptPdfRes === 'string' ? corruptPdfRes : (corruptPdfRes?.text || '');
+  assert.strictEqual(corruptPdfText, '', 'Поврежденный PDF возвращает пустую строку, не выбрасывая ошибку');
   console.log('  ✓ 2.2. Битый/поврежденный PDF не роняет процесс и возвращает чистый результат');
 
   // 2.3 Сканированный PDF без текста не выдает бинарный шум
@@ -122,15 +123,17 @@ async function runComprehensiveQATests() {
     '%PDF-1.7\n1 0 obj\n<< /Type /XObject /Subtype /Image /Filter /DCTDecode >>\nstream\n' +
     ',01444 22222222222222222 456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\nendstream\nendobj\n%%EOF'
   );
-  const scanRes = extractFromPdf(mockScanPdf);
-  assert.strictEqual(scanRes, '', 'Графический скан без текстового слоя не должен отдавать бинарные заголовки или байты JPEG');
+  const scanRes = await extractFromPdf(mockScanPdf);
+  const scanText = typeof scanRes === 'string' ? scanRes : (scanRes?.text || '');
+  assert.strictEqual(scanText, '', 'Графический скан без текстового слоя не должен отдавать бинарные заголовки или байты JPEG');
   console.log('  ✓ 2.3. Изоляция бинарных данных: сканы JPEG не загрязняют поисковый индекс');
 
   // 2.4 Декодирование русских строк в CP1251
   // Строка "Регламент" в CP1251 octal: \320\345\343\353\340\354\345\355\362
   const octalSample = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nstream\nBT /F1 12 Tf (\\320\\345\\343\\353\\340\\354\\345\\355\\362) Tj ET\nendstream\nendobj\n');
-  const octalRes = extractFromPdf(octalSample);
-  assert.ok(octalRes.includes('Регламент'), `Октальные CP1251 строки должны декодироваться в русский текст, получено: "${octalRes}"`);
+  const octalRes = await extractFromPdf(octalSample);
+  const octalText = typeof octalRes === 'string' ? octalRes : (octalRes?.text || '');
+  assert.ok(octalText.includes('Регламент'), `Октальные CP1251 строки должны декодироваться в русский текст, получено: "${octalText}"`);
   console.log('  ✓ 2.4. Восьмеричные CP1251/WinAnsi строки успешно декодированы в кириллицу');
 
   // --- 3. Тестирование граничных случаев поискового API ---

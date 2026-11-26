@@ -251,6 +251,27 @@ async function initDb() {
       console.warn('[PostgreSQL] Notice during test users verification:', errUsers.message);
     }
 
+    // Гарантируем наличие отделов в справочнике departments для всех непустых users.department
+    await client.query(`
+      INSERT INTO departments (name)
+      SELECT DISTINCT TRIM(department)
+      FROM users
+      WHERE department IS NOT NULL
+        AND TRIM(department) != ''
+        AND LOWER(TRIM(department)) != 'без отдела'
+        AND NOT EXISTS (
+          SELECT 1 FROM departments d WHERE LOWER(TRIM(d.name)) = LOWER(TRIM(users.department))
+        );
+
+      UPDATE users u
+      SET department_id = d.id,
+          department = d.name
+      FROM departments d
+      WHERE u.department IS NOT NULL
+        AND LOWER(TRIM(u.department)) = LOWER(TRIM(d.name))
+        AND u.department_id IS NULL;
+    `).catch(() => {});
+
     // Check if database needs seeding
     const res = await client.query('SELECT COUNT(*) FROM users');
     if (parseInt(res.rows[0].count, 10) <= 6) {

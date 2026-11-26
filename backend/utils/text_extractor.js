@@ -242,6 +242,60 @@ async function extractFromPptx(buffer) {
   }
 }
 
+// Fallback для повреждённых/урезанных PDF с несжатыми операторами BT...ET (включая октальный CP1251)
+function decodePdfStringBytes(rawLiteral) {
+  const bytes = [];
+  for (let i = 0; i < rawLiteral.length; i++) {
+    const ch = rawLiteral[i];
+    if (ch === '\\' && i + 1 < rawLiteral.length) {
+      const next = rawLiteral[i + 1];
+      if (/[0-7]/.test(next)) {
+        const octMatch = rawLiteral.slice(i + 1, i + 4).match(/^[0-7]{1,3}/);
+        bytes.push(parseInt(octMatch[0], 8) & 0xff);
+        i += octMatch[0].length;
+        continue;
+      }
+      const escapes = { n: 10, r: 13, t: 9, b: 8, f: 12, '(': 40, ')': 41, '\\': 92 };
+      if (escapes[next] !== undefined) {
+        bytes.push(escapes[next]);
+        i += 1;
+        continue;
+      }
+      if (next === '\r' || next === '\n') {
+        if (next === '\r' && rawLiteral[i + 2] === '\n') i += 1;
+        i += 1;
+        continue;
+      }
+    }
+    bytes.push(rawLiteral.charCodeAt(i) & 0xff);
+  }
+  const arr = Uint8Array.from(bytes);
+  try {
+    return decUtf8Strict.decode(arr);
+  } catch (e) {
+    return dec1251.decode(arr);
+  }
+}
+
+function extractPdfTextFallback(buffer) {
+  const raw = buffer.toString('latin1');
+  const btBlocks = raw.match(/\bBT\b[\s\S]*?\bET\b/g);
+  if (!btBlocks) return '';
+
+  const chunks = [];
+  const strRegex = /\(((?:\\.|[^\\()])*)\)\s*(?:Tj|'|")/g;
+  for (const block of btBlocks) {
+    let m;
+    while ((m = strRegex.exec(block)) !== null) {
+      const decoded = decodePdfStringBytes(m[1]).trim();
+      if (decoded && !/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(decoded)) {
+        chunks.push(decoded);
+      }
+    }
+  }
+  return normalizeExtractedText(chunks.join(' '));
+}
+
 // 4. PDF — pdf-parse (PDF.js) с постраничным разделением и детекцией сканов
 async function extractFromPdf(buffer) {
   if (!pdfParse) return { text: '', sections: null, isScanned: false };
@@ -281,7 +335,10 @@ async function extractFromPdf(buffer) {
       }
     });
 
-    const fullText = normalizeExtractedText(nonEmptyPages.length > 0 ? nonEmptyPages.join('\n\n') : (data.text || ''));
+    let fullText = normalizeExtractedText(nonEmptyPages.length > 0 ? nonEmptyPages.join('\n\n') : (data.text || ''));
+    if (!fullText) {
+      fullText = extractPdfTextFallback(buffer);
+    }
     const isScanned = Boolean((data.numpages || 0) > 0 && fullText.length < 25);
 
     return {
@@ -291,7 +348,8 @@ async function extractFromPdf(buffer) {
     };
   } catch (err) {
     console.warn('[TextExtractor] PDF parse warning:', err.message);
-    return { text: '', sections: null, isScanned: false };
+    const fallbackText = extractPdfTextFallback(buffer);
+    return { text: fallbackText, sections: null, isScanned: false };
   }
 }
 
