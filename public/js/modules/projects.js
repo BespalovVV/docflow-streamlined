@@ -354,7 +354,7 @@ window.ProjectsModule = (function() {
   }
 
   function openProjectTasksModal(project) {
-    AppState.setModalTitle(`<svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-clipboard"/></svg> Задачи проекта: ${project.title}`);
+    AppState.setModalTitle(`<svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-clipboard"/></svg> Задачи проекта: ${AppState.escapeHtml(project.title)}`);
     const modalBody = document.getElementById('modal-body');
 
     modalBody.innerHTML = `

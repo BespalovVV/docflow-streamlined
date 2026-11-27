@@ -66,14 +66,32 @@ function testTarget(host, port, timeoutMs = 1500) {
   });
 }
 
+function isBlockedOnlyofficePath(subPath) {
+  const cleanPath = String(subPath || '').split('?')[0].toLowerCase();
+  return (
+    cleanPath.includes('commandservice.ashx') ||
+    cleanPath.includes('convertservice.ashx') ||
+    cleanPath === '/info' ||
+    cleanPath.startsWith('/info/')
+  );
+}
+
+function stripCrlf(value) {
+  return String(value || '').replace(/[\r\n]/g, '');
+}
+
 // Express HTTP Proxy Middleware
 async function onlyofficeProxyMiddleware(req, res, next) {
   if (!req.url.startsWith('/onlyoffice')) {
     return next();
   }
 
-  const target = await resolveWorkingTarget();
   const subPath = req.url.replace(/^\/onlyoffice/, '') || '/';
+  if (isBlockedOnlyofficePath(subPath)) {
+    return res.status(403).json({ error: 'Внешний доступ к сервисным эндпоинтам ONLYOFFICE запрещён' });
+  }
+
+  const target = await resolveWorkingTarget();
 
   const clientProto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
   const clientHost = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
@@ -137,23 +155,30 @@ async function handleWebSocketUpgrade(req, clientSocket, head) {
     return;
   }
 
-  const target = await resolveWorkingTarget();
-  const subPath = req.url.replace(/^\/onlyoffice/, '') || '/';
+  const rawSubPath = req.url.replace(/^\/onlyoffice/, '') || '/';
+  const subPath = stripCrlf(rawSubPath);
+  if (isBlockedOnlyofficePath(subPath)) {
+    clientSocket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+    clientSocket.destroy();
+    return;
+  }
 
-  const clientProto = req.headers['x-forwarded-proto'] || 'http';
-  const clientHost = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+  const target = await resolveWorkingTarget();
+  const clientProto = stripCrlf(req.headers['x-forwarded-proto'] || 'http');
+  const clientHost = stripCrlf(req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000');
 
   const targetSocket = net.connect(target.port, target.host, () => {
     // Reconstruct HTTP upgrade request to ONLYOFFICE
-    let upgradeReq = `${req.method} ${subPath} HTTP/1.1\r\n`;
+    let upgradeReq = `${stripCrlf(req.method)} ${subPath} HTTP/1.1\r\n`;
     const lowerKeys = new Set();
     for (const [k, v] of Object.entries(req.headers)) {
-      const lk = k.toLowerCase();
+      const safeK = stripCrlf(k);
+      const lk = safeK.toLowerCase();
       lowerKeys.add(lk);
       if (lk === 'host') {
         upgradeReq += `host: ${target.host}:${target.port}\r\n`;
       } else {
-        upgradeReq += `${k}: ${v}\r\n`;
+        upgradeReq += `${safeK}: ${stripCrlf(Array.isArray(v) ? v.join(', ') : v)}\r\n`;
       }
     }
     if (!lowerKeys.has('x-forwarded-host')) upgradeReq += `x-forwarded-host: ${clientHost}\r\n`;

@@ -916,9 +916,10 @@
           } else if (act.type === 'open_documents') {
             AppState.switchView('documents');
           } else if (act.type === 'download_file' && act.url) {
-            const token = API.getToken();
-            const sep = act.url.includes('?') ? '&' : '?';
-            window.open(`${act.url}${token ? `${sep}token=${encodeURIComponent(token)}` : ''}`, '_blank');
+            const safeUrl = String(act.url);
+            if (safeUrl.startsWith('/api/') || safeUrl.startsWith('/uploads/')) {
+              window.open(safeUrl, '_blank', 'noopener,noreferrer');
+            }
           }
         };
         botBubble.appendChild(actBtn);
@@ -1485,7 +1486,12 @@
 
   async function handleLogout() {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      const token = API.getToken();
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
     } catch (e) {}
     API.clearToken();
     sessionStorage.removeItem('docflow_sso_link');

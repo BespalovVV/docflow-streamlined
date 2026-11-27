@@ -144,7 +144,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-const { getSubordinateUserIds } = require('../utils/hierarchy');
+const { getSubordinateUserIds, canAccessProject } = require('../utils/hierarchy');
 
 // GET /api/projects/:id/details - Project details with tasks and participants
 router.get('/:id/details', authenticateToken, async (req, res) => {
@@ -152,6 +152,11 @@ router.get('/:id/details', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const projectRes = await db.query('SELECT * FROM projects WHERE id = $1', [id]);
     if (projectRes.rows.length === 0) return res.status(404).json({ error: 'Проект не найден' });
+
+    const hasAccess = await canAccessProject(id, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Отказано в доступе к этому проекту' });
+    }
 
     const project = projectRes.rows[0];
     const isAdmin = req.user.role === 'ADMIN' || req.user.role_code === 'admin';

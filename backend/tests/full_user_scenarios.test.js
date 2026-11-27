@@ -3,6 +3,7 @@ const assert = require('assert');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { generateTotp } = require('../utils/totp');
 const { decrypt } = require('../utils/crypto');
@@ -443,8 +444,16 @@ async function runFullSystemScenariosTests() {
     console.log('    ✅ 7.7.1. Отправка команды forcesave в ONLYOFFICE CommandService — Успешно');
 
     // 7.8 ТЕСТ ЭМУЛЯЦИИ WEBHOOK CALLBACK ДИНАМИЧЕСКОГО АВТОСОХРАНЕНИЯ (STATUS 6)
-    const cbStatus6 = await apiRequest(`/api/documents/onlyoffice-callback?docId=${testDocxId}`, {
+    const cbUrlParsed = new URL(configAdmin.data.editorConfig.callbackUrl);
+    const cbEndpoint = `${cbUrlParsed.pathname}${cbUrlParsed.search}`;
+    const ooSecret = (process.env.ONLYOFFICE_JWT_SECRET || '').trim();
+    const makeCbHeaders = (payload) => ooSecret
+      ? { Authorization: `Bearer ${jwt.sign(payload, ooSecret, { expiresIn: '5m' })}` }
+      : {};
+
+    const cbStatus6 = await apiRequest(cbEndpoint, {
       method: 'POST',
+      headers: makeCbHeaders({ status: 6 }),
       body: { status: 6 } // Dynamic save, no downloadUrl
     });
     assert.strictEqual(cbStatus6.status, 200);
@@ -456,8 +465,9 @@ async function runFullSystemScenariosTests() {
     console.log('    ✅ 7.8.1. Динамическое автосохранение: edit_key сохранен для активной сессии');
 
     // 7.9 ТЕСТ ФИНАЛЬНОГО ЗАВЕРШЕНИЯ СЕССИИ (STATUS 2)
-    const cbStatus2 = await apiRequest(`/api/documents/onlyoffice-callback?docId=${testDocxId}`, {
+    const cbStatus2 = await apiRequest(cbEndpoint, {
       method: 'POST',
+      headers: makeCbHeaders({ status: 2 }),
       body: { status: 2 } // All users disconnected
     });
     assert.strictEqual(cbStatus2.status, 200);

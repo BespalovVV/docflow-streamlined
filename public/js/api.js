@@ -5,16 +5,10 @@ const API = {
 
   setToken(token) {
     localStorage.setItem('docflow_token', token);
-    try {
-      document.cookie = `docflow_token=${encodeURIComponent(token)}; path=/; max-age=604800; SameSite=Lax`;
-    } catch (e) {}
   },
 
   clearToken() {
     localStorage.removeItem('docflow_token');
-    try {
-      document.cookie = 'docflow_token=; path=/; max-age=0; SameSite=Lax';
-    } catch (e) {}
   },
 
   async request(endpoint, options = {}) {
@@ -240,13 +234,11 @@ const API = {
   },
 
   downloadAttachmentUrl(id) {
-    const token = this.getToken();
-    return `/api/mail/attachments/${id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    return `/api/mail/attachments/${parseInt(id, 10)}/download`;
   },
 
   downloadDocumentUrl(id) {
-    const token = this.getToken();
-    return `/api/documents/download/${id}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    return `/api/documents/download/${parseInt(id, 10)}`;
   },
 
   importAttachmentToDocuments(id) {
@@ -663,11 +655,4 @@ const API = {
   }
 };
 
-// Sync auth token to cookie on script load
-try {
-  const existingToken = API.getToken();
-  if (existingToken && !document.cookie.includes('docflow_token=')) {
-    document.cookie = `docflow_token=${encodeURIComponent(existingToken)}; path=/; max-age=604800; SameSite=Lax`;
-  }
-} catch (e) {}
 

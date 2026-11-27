@@ -3,9 +3,9 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { JWT_SECRET, authenticateToken, invalidateUserCache } = require('../middleware/auth');
+const { JWT_SECRET, authenticateToken, authenticateTokenOptional, invalidateUserCache } = require('../middleware/auth');
 const { loginRateLimiter, twoFaRateLimiter } = require('../middleware/rateLimiter');
-const { encrypt, decrypt } = require('../utils/crypto');
+const { encrypt, decryptStrict } = require('../utils/crypto');
 const { appCache } = require('../utils/cache');
 const {
   generateSecret,
@@ -30,7 +30,8 @@ function buildTokenPayload(user) {
     role: user.role,
     role_id: user.role_id,
     role_code: user.role_code || (user.role === 'ADMIN' ? 'admin' : 'employee'),
-    department: user.department
+    department: user.department,
+    tv: Number(user.token_version || 1)
   };
 }
 
@@ -114,16 +115,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     }
 
     const user = userRes.rows[0];
-    let isMatch = await bcrypt.compare(password, user.password_hash);
-
-    // Fallback для тестовых аккаунтов из TEST_USERS.txt
-    if (!isMatch && (user.email.endsWith('@docflow.local') || user.email.endsWith('@test.local'))) {
-      if (password === 'Test1234!' || password === 'admin123' || password === 'user123') {
-        isMatch = true;
-        const newHash = await bcrypt.hash(password, 10);
-        await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, user.id]).catch(() => {});
-      }
-    }
+    const isMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!isMatch) {
       return res.status(401).json({ error: 'Неверный email или пароль' });
@@ -192,7 +184,7 @@ router.post('/2fa/confirm-setup', twoFaRateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Секрет 2FA не инициализирован. Повторите вход.' });
     }
 
-    const secret = decrypt(user.totp_secret_enc);
+    const secret = decryptStrict(user.totp_secret_enc);
     const check = checkAndMarkTotpReplay(user.id, secret, code);
     if (!check.valid) {
       const msg = check.replayed
@@ -249,7 +241,7 @@ router.post('/2fa/verify', twoFaRateLimiter, async (req, res) => {
     let remainingBackupCodes = null;
 
     if (/^\d{6}$/.test(digitsOnly)) {
-      const secret = decrypt(user.totp_secret_enc);
+      const secret = decryptStrict(user.totp_secret_enc);
       const check = checkAndMarkTotpReplay(user.id, secret, digitsOnly);
       if (check.replayed) {
         return res.status(401).json({
@@ -267,10 +259,15 @@ router.post('/2fa/verify', twoFaRateLimiter, async (req, res) => {
 
         for (const row of codesRes.rows) {
           if (await bcrypt.compare(normalizedBackup, row.code_hash)) {
-            await db.query('UPDATE user_backup_codes SET used_at = CURRENT_TIMESTAMP WHERE id = $1', [row.id]);
-            authenticated = true;
-            usedBackupCode = true;
-            remainingBackupCodes = Math.max(0, codesRes.rows.length - 1);
+            const useRes = await db.query(
+              'UPDATE user_backup_codes SET used_at = CURRENT_TIMESTAMP WHERE id = $1 AND used_at IS NULL RETURNING id',
+              [row.id]
+            );
+            if (useRes.rows.length === 1) {
+              authenticated = true;
+              usedBackupCode = true;
+              remainingBackupCodes = Math.max(0, codesRes.rows.length - 1);
+            }
             break;
           }
         }
@@ -311,7 +308,7 @@ router.post('/2fa/regenerate-backup-codes', authenticateToken, twoFaRateLimiter,
       return res.status(400).json({ error: '2FA не активирована для этого аккаунта' });
     }
 
-    const secret = decrypt(user.totp_secret_enc);
+    const secret = decryptStrict(user.totp_secret_enc);
     const check = checkAndMarkTotpReplay(user.id, secret, code);
     if (!check.valid) {
       const msg = check.replayed
@@ -331,9 +328,25 @@ router.post('/2fa/regenerate-backup-codes', authenticateToken, twoFaRateLimiter,
   }
 });
 
-// POST /api/auth/logout - Clear auth cookie
-router.post('/logout', (req, res) => {
-  res.clearCookie('docflow_token');
+// POST /api/auth/logout - Revoke active JWT sessions (token_version++) & clear auth cookie
+router.post('/logout', authenticateTokenOptional, async (req, res) => {
+  try {
+    if (req.user && req.user.id) {
+      await db.query(
+        'UPDATE users SET token_version = COALESCE(token_version, 1) + 1 WHERE id = $1',
+        [req.user.id]
+      );
+      invalidateUserCache(req.user.id);
+    }
+  } catch (err) {
+    console.warn('[Logout] Failed to bump token_version:', err.message);
+  }
+  res.clearCookie('docflow_token', {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production' && req.secure
+  });
   res.json({ success: true, message: 'Сессия завершена' });
 });
 

@@ -372,7 +372,24 @@ const updateTaskHandler = async (req, res) => {
     if (recurring_interval !== undefined) { params.push(Math.max(1, parseInt(recurring_interval, 10) || 1)); updates.push(`recurring_interval = $${params.length}`); }
     if (recurring_days !== undefined) { params.push(recurring_days ? String(recurring_days) : null); updates.push(`recurring_days = $${params.length}`); }
     if (recurring_exceptions !== undefined) { params.push(Array.isArray(recurring_exceptions) ? recurring_exceptions : []); updates.push(`recurring_exceptions = $${params.length}`); }
-    if (series_id !== undefined) { params.push(series_id ? parseInt(series_id, 10) : null); updates.push(`series_id = $${params.length}`); }
+    if (series_id !== undefined) {
+      const requestedSeriesId = series_id ? parseInt(series_id, 10) : null;
+      if (requestedSeriesId && requestedSeriesId !== task.series_id && requestedSeriesId !== task.id) {
+        if (!isAdmin) {
+          const subordinateIds = cachedSubordinateIds || await getSubordinateUserIds(req.user.id);
+          const allowedUserIds = [parseInt(req.user.id, 10), ...subordinateIds];
+          const seriesOwnerRes = await db.query(
+            'SELECT 1 FROM tasks WHERE (id = $1 OR series_id = $1) AND (creator_id = ANY($2::int[]) OR assignee_id = ANY($2::int[])) LIMIT 1',
+            [requestedSeriesId, allowedUserIds]
+          );
+          if (seriesOwnerRes.rows.length === 0) {
+            return res.status(403).json({ error: 'Отказано в доступе к указанной серии задач' });
+          }
+        }
+      }
+      params.push(requestedSeriesId);
+      updates.push(`series_id = $${params.length}`);
+    }
 
     if (updates.length === 0) return res.status(400).json({ error: 'Нет полей для обновления' });
 
@@ -381,7 +398,7 @@ const updateTaskHandler = async (req, res) => {
     // DEF-03: Если запрошено обновление всей серии (update_scope: 'series')
     if (update_scope === 'series') {
       const rootSeriesId = task.series_id || task.id;
-      await db.query(`
+      let seriesSql = `
         UPDATE tasks SET
           title = COALESCE($2, title),
           description = COALESCE($3, description),
@@ -392,7 +409,8 @@ const updateTaskHandler = async (req, res) => {
           recurring_days = COALESCE($8, recurring_days),
           recurring_until = COALESCE($9, recurring_until)
         WHERE (series_id = $1 OR id = $1) AND id != $10
-      `, [
+      `;
+      const seriesParams = [
         rootSeriesId,
         title ? title.trim() : null,
         description !== undefined ? description : null,
@@ -403,7 +421,14 @@ const updateTaskHandler = async (req, res) => {
         recurring_days || null,
         recurring_until || null,
         id
-      ]).catch(e => console.warn('[Tasks Series Update Warning]:', e.message));
+      ];
+      if (!isAdmin) {
+        const subordinateIds = cachedSubordinateIds || await getSubordinateUserIds(req.user.id);
+        const allowedUserIds = [parseInt(req.user.id, 10), ...subordinateIds];
+        seriesParams.push(allowedUserIds);
+        seriesSql += ` AND (creator_id = ANY($${seriesParams.length}::int[]) OR assignee_id = ANY($${seriesParams.length}::int[]))`;
+      }
+      await db.query(seriesSql, seriesParams).catch(e => console.warn('[Tasks Series Update Warning]:', e.message));
     }
 
     const fullTaskRes = await db.query(`

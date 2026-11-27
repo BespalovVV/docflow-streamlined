@@ -1,7 +1,10 @@
 const crypto = require('crypto');
 
 const ALGORITHM = 'aes-256-gcm';
-const SECRET_KEY = crypto.createHash('sha256').update(process.env.JWT_SECRET || 'docflow_secret_key_2026_super_secure').digest();
+const SECRET_KEY = crypto
+  .createHash('sha256')
+  .update(process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'docflow_secret_key_2026_super_secure')
+  .digest();
 
 function encrypt(text) {
   if (!text) return text;
@@ -35,6 +38,26 @@ function decrypt(encryptedText) {
   }
 }
 
+/**
+ * Строгая расшифровка AES-256-GCM: при подмене authTag или повреждении шифротекста
+ * выбрасывает исключение вместо тихого возврата сырой строки.
+ */
+function decryptStrict(encryptedText) {
+  if (!encryptedText) return encryptedText;
+  const parts = String(encryptedText).split(':');
+  if (parts.length !== 3) {
+    return encryptedText;
+  }
+  const [ivHex, authTagHex, encrypted] = parts;
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
 function signDownloadUrlParams(resourceId, ttlSeconds = 7200) {
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
   const payload = `${resourceId}:${exp}`;
@@ -60,6 +83,7 @@ function verifyDownloadUrlParams(resourceId, sig, exp) {
 module.exports = {
   encrypt,
   decrypt,
+  decryptStrict,
   signDownloadUrlParams,
   verifyDownloadUrlParams
 };

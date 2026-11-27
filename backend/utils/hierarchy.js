@@ -117,11 +117,45 @@ async function getOrganizationTree() {
   return tree;
 }
 
+async function canAccessProject(projectId, user) {
+  if (!user) return false;
+  const parsedProjectId = parseInt(projectId, 10);
+  if (isNaN(parsedProjectId)) return false;
+  const isAdmin = user.role === 'ADMIN' || user.role_code === 'admin';
+  if (isAdmin) return true;
+
+  const userId = parseInt(user.id, 10);
+  const subIds = await getSubordinateUserIds(userId);
+  const allowedIds = [userId, ...subIds];
+
+  const res = await db.query(`
+    SELECT 1
+    FROM projects p
+    LEFT JOIN directions d ON d.id = p.direction_id
+    WHERE p.id = $1 AND (
+      p.manager_id = ANY($2::int[])
+      OR d.manager_id = ANY($2::int[])
+      OR EXISTS (
+        SELECT 1 FROM tasks t
+        WHERE t.project_id = p.id
+          AND (t.assignee_id = ANY($2::int[]) OR t.creator_id = ANY($2::int[]))
+      )
+      OR EXISTS (
+        SELECT 1 FROM project_materials pm
+        WHERE pm.project_id = p.id AND pm.author_id = ANY($2::int[])
+      )
+    )
+    LIMIT 1
+  `, [parsedProjectId, allowedIds]);
+  return res.rows.length > 0;
+}
+
 module.exports = {
   getSubordinateUserIds,
   getDirectSubordinates,
   isSubordinate,
   wouldCreateHierarchyCycle,
   getOrganizationTree,
+  canAccessProject,
   invalidateHierarchyCache
 };

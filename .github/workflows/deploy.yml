@@ -62,6 +62,7 @@ jobs:
           PGPASSWORD: docflow_secure_pass
           PGDATABASE: docflow_db
           JWT_SECRET: ci_cd_test_secret_key_2026_super_secure
+          ONLYOFFICE_JWT_SECRET: ci_cd_onlyoffice_jwt_secret_2026_secure
           TEST_APP_URL: http://127.0.0.1:3000
         run: |
           node backend/server.js &
@@ -84,6 +85,7 @@ jobs:
           npm test
           node backend/tests/sso_labspace_integration.test.js
           node backend/tests/rbac_db_and_sso_edit.test.js
+          node backend/tests/security_hardening_audit.test.js
 
   # ==============================================================
   # ЭТАП 2: СБОРКА DOCKER ОБРАЗОВ

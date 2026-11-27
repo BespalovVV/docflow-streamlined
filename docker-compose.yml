@@ -6,9 +6,9 @@ services:
     container_name: docflow_postgres
     restart: always
     environment:
-      POSTGRES_USER: docflow
-      POSTGRES_PASSWORD: docflow_secure_pass
-      POSTGRES_DB: docflow_db
+      POSTGRES_USER: ${PGUSER:-docflow}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?Set PGPASSWORD in .env}
+      POSTGRES_DB: ${PGDATABASE:-docflow_db}
     ports:
       - "5439:5432"
     volumes:
@@ -26,7 +26,9 @@ services:
     ports:
       - "28083:80"
     environment:
-      - JWT_ENABLED=false
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:?Set ONLYOFFICE_JWT_SECRET in .env}
+      - JWT_HEADER=Authorization
       - ALLOW_PRIVATE_IP_ADDRESS=true
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -42,8 +44,8 @@ services:
     restart: always
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: docflow_minio_user
-      MINIO_ROOT_PASSWORD: docflow_minio_password
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docflow_minio_user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -62,29 +64,32 @@ services:
     ports:
       - "3000:3000"
     environment:
-      PORT: 3000
-      NODE_ENV: production
-      JWT_SECRET: docflow_secret_key_2026_super_secure
+      PORT: ${PORT:-3000}
+      NODE_ENV: ${NODE_ENV:-production}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:?Set ONLYOFFICE_JWT_SECRET in .env}
       PGHOST: postgres
       PGPORT: 5432
-      PGUSER: docflow
-      PGPASSWORD: docflow_secure_pass
-      PGDATABASE: docflow_db
-      ONLYOFFICE_URL: http://localhost:28083
+      PGUSER: ${PGUSER:-docflow}
+      PGPASSWORD: ${PGPASSWORD:?Set PGPASSWORD in .env}
+      PGDATABASE: ${PGDATABASE:-docflow_db}
+      ONLYOFFICE_URL: ${ONLYOFFICE_URL:-http://localhost:28083}
       CONTAINER_APP_HOST: docflow_streamlined:3000
       APP_INTERNAL_URL: http://docflow_streamlined:3000
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
       MINIO_USE_SSL: "false"
-      MINIO_ROOT_USER: docflow_minio_user
-      MINIO_ROOT_PASSWORD: docflow_minio_password
-      MINIO_BUCKET: docflow-storage
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docflow_minio_user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:-docflow-storage}
       HF_CACHE_DIR: /app/.hf_cache
       EMBEDDING_MODEL: Xenova/multilingual-e5-small
-      SSO_LABSPACE_CLIENT_SECRET: docflow-labspace-client-secret-2026-keep-distinct-32chars
-      SSO_DOCFLOW_CLIENT_SECRET: labspace-docflow-client-secret-2026-keep-distinct-32chars
-      SSO_LABSPACE_URL: https://d1k1gw4f-8100.uks1.devtunnels.ms/
-      SSO_LABSPACE_INTERNAL_URL: http://host.docker.internal:8100
+      SSO_LABSPACE_CLIENT_SECRET: ${SSO_LABSPACE_CLIENT_SECRET:-}
+      SSO_DOCFLOW_CLIENT_SECRET: ${SSO_DOCFLOW_CLIENT_SECRET:-}
+      SSO_LABSPACE_URL: ${SSO_LABSPACE_URL:-}
+      SSO_LABSPACE_INTERNAL_URL: ${SSO_LABSPACE_INTERNAL_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

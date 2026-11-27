@@ -853,11 +853,13 @@ window.MessengerModule = (function () {
 
   function getAuthFileUrl(rawUrl) {
     if (!rawUrl) return '';
-    if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return rawUrl;
-    const token = (typeof API !== 'undefined' && API.getToken) ? API.getToken() : null;
-    if (!token) return rawUrl;
-    const sep = rawUrl.includes('?') ? '&' : '?';
-    return `${rawUrl}${sep}token=${encodeURIComponent(token)}`;
+    const str = String(rawUrl).trim();
+    if (str.startsWith('blob:')) return str;
+    // Разрешаем только относительные пути /uploads/ или /api/ (защита от javascript:/data:/external XSS)
+    if ((str.startsWith('/uploads/') || str.startsWith('/api/')) && !str.startsWith('//')) {
+      return str;
+    }
+    return '';
   }
 
   async function loadMessages() {
@@ -932,24 +934,27 @@ window.MessengerModule = (function () {
             const img = images[0];
             const safeName = AppState.escapeHtml(img.name || 'Изображение');
             const sizeStr = formatFileSize(img.size);
-            const authUrl = getAuthFileUrl(img.url);
-            imagesHtml = `
-              <div style="margin-top: 8px; max-width: 320px; width: 100%; overflow: hidden;">
-                <a href="${authUrl}" target="_blank" rel="noopener noreferrer" style="display: block; border-radius: 8px; overflow: hidden; max-width: 320px; width: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
-                  <img src="${authUrl}" alt="${safeName}" style="width: 100%; max-height: 240px; object-fit: cover; display: block;" loading="lazy">
-                </a>
-                <div style="font-size: 10px; opacity: 0.8; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; max-width: 100%; min-width: 0;">
-                  <span title="${safeName}" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${safeName}</span>
-                  <span style="flex-shrink: 0; white-space: nowrap;">${sizeStr}</span>
+            const authUrl = AppState.escapeHtml(getAuthFileUrl(img.url));
+            if (authUrl) {
+              imagesHtml = `
+                <div style="margin-top: 8px; max-width: 320px; width: 100%; overflow: hidden;">
+                  <a href="${authUrl}" target="_blank" rel="noopener noreferrer" style="display: block; border-radius: 8px; overflow: hidden; max-width: 320px; width: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+                    <img src="${authUrl}" alt="${safeName}" style="width: 100%; max-height: 240px; object-fit: cover; display: block;" loading="lazy">
+                  </a>
+                  <div style="font-size: 10px; opacity: 0.8; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; max-width: 100%; min-width: 0;">
+                    <span title="${safeName}" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${safeName}</span>
+                    <span style="flex-shrink: 0; white-space: nowrap;">${sizeStr}</span>
+                  </div>
                 </div>
-              </div>
-            `;
+              `;
+            }
           } else if (images.length > 1) {
             imagesHtml = `
               <div style="margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; max-width: 360px;">
                 ${images.map(img => {
               const safeName = AppState.escapeHtml(img.name || 'Изображение');
-              const authUrl = getAuthFileUrl(img.url);
+              const authUrl = AppState.escapeHtml(getAuthFileUrl(img.url));
+              if (!authUrl) return '';
               return `
                     <a href="${authUrl}" target="_blank" rel="noopener noreferrer" title="${safeName}" style="display: block; aspect-ratio: 1; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.15);">
                       <img src="${authUrl}" alt="${safeName}" style="width: 100%; height: 100%; object-fit: cover; display: block;" loading="lazy">
@@ -993,9 +998,12 @@ window.MessengerModule = (function () {
                 ? 'padding: 4px 10px; font-size: 11px; text-decoration: none; flex-shrink: 0; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: #fff;'
                 : 'padding: 4px 10px; font-size: 11px; text-decoration: none; flex-shrink: 0;';
 
-              const token = API.getToken();
-              const isDocFlowDoc = Boolean(doc.docId || doc.type === 'docflow_document');
-              const downloadUrl = isDocFlowDoc ? `/api/documents/${doc.docId}/download` : `/api/messenger/download?url=${encodeURIComponent(doc.url)}&name=${encodeURIComponent(safeName)}${token ? '&token=' + token : ''}`;
+              const safeDocId = parseInt(doc.docId, 10);
+              const isDocFlowDoc = Boolean(!isNaN(safeDocId) && safeDocId > 0 && (doc.docId || doc.type === 'docflow_document'));
+              const safeUploadPath = getAuthFileUrl(doc.url);
+              const downloadUrl = isDocFlowDoc
+                ? `/api/documents/download/${safeDocId}`
+                : (safeUploadPath ? `/api/messenger/download?url=${encodeURIComponent(safeUploadPath)}&name=${encodeURIComponent(safeName)}` : '#');
 
               return `
                   <div class="chat-doc-card" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; background: ${cardBg}; padding: 7px 10px; border-radius: 8px; border: 1px solid ${cardBorder}; max-width: 100%; box-sizing: border-box;">
@@ -1010,11 +1018,11 @@ window.MessengerModule = (function () {
                     </div>
                     <div style="display: flex; gap: 4px; align-items: center;">
                       ${isDocFlowDoc ? `
-                        <a href="/editor.html?id=${doc.docId}" target="_blank" class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 10.5px; text-decoration: none; border-radius: 4px; white-space: nowrap;">
+                        <a href="/editor.html?id=${safeDocId}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 10.5px; text-decoration: none; border-radius: 4px; white-space: nowrap;">
                           <svg class="df-ico" width="15" height="15" aria-hidden="true"><use href="#df-ico-file-edit"/></svg> Открыть
                         </a>
                       ` : ''}
-                      <a href="${downloadUrl}" download="${AppState.escapeHtml(safeName)}" class="${btnClass}" style="${btnStyle}; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;">
+                      <a href="${AppState.escapeHtml(downloadUrl)}" download="${AppState.escapeHtml(safeName)}" class="${btnClass}" style="${btnStyle}; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         <span>Скачать</span>
                       </a>

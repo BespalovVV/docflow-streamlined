@@ -44,6 +44,7 @@ async function resolveDepartmentInput({ department, department_id }) {
 // GET /api/users - List users with hierarchy details
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    const isAdmin = req.user.role === 'ADMIN' || req.user.role_code === 'admin';
     const result = await db.query(`
       SELECT u.id, u.email, u.full_name, u.role, u.department, u.department_id, u.position, u.manager_id, u.avatar_url, u.created_at,
              u.totp_enabled, u.totp_verified_at,
@@ -56,7 +57,10 @@ router.get('/', authenticateToken, async (req, res) => {
       GROUP BY u.id, m.full_name, m.email
       ORDER BY u.id ASC
     `);
-    res.json(result.rows);
+    const rows = isAdmin
+      ? result.rows
+      : result.rows.map(({ totp_enabled, totp_verified_at, ...publicFields }) => publicFields);
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка загрузки пользователей: ' + err.message });
   }
@@ -334,6 +338,9 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     if (!email || !password || !full_name) {
       return res.status(400).json({ error: 'Заполните обязательные поля: Email, Пароль, ФИО' });
     }
+    if (String(password).length < 8) {
+      return res.status(400).json({ error: 'Пароль должен содержать минимум 8 символов' });
+    }
 
     const cleanEmail = email.trim().toLowerCase();
     const existing = await db.query('SELECT id FROM users WHERE LOWER(email) = $1', [cleanEmail]);
@@ -483,10 +490,15 @@ router.patch('/:id', authenticateToken, requireAdmin, async (req, res) => {
         updates.push(`role_id = $${params.length}`);
       }
     }
-    if (password && String(password).trim().length > 0) {
-      const hash = await bcrypt.hash(String(password).trim(), 10);
+    if (password !== undefined && String(password).length > 0) {
+      const cleanPass = String(password).trim();
+      if (cleanPass.length < 8) {
+        return res.status(400).json({ error: 'Пароль должен содержать минимум 8 символов' });
+      }
+      const hash = await bcrypt.hash(cleanPass, 10);
       params.push(hash);
       updates.push(`password_hash = $${params.length}`);
+      updates.push(`token_version = COALESCE(token_version, 1) + 1`);
     }
 
     if (updates.length === 0) {
@@ -588,7 +600,7 @@ router.post('/:id/reset-2fa', authenticateToken, requireAdmin, async (req, res) 
 
     const updated = await db.withTransaction(async (client) => {
       const updRes = await client.query(
-        'UPDATE users SET totp_enabled = FALSE, totp_secret_enc = NULL, totp_verified_at = NULL WHERE id = $1 RETURNING id, email, full_name',
+        'UPDATE users SET totp_enabled = FALSE, totp_secret_enc = NULL, totp_verified_at = NULL, token_version = COALESCE(token_version, 1) + 1 WHERE id = $1 RETURNING id, email, full_name',
         [targetId]
       );
       if (updRes.rows.length === 0) return null;

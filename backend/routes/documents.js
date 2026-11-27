@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const jwt = require('jsonwebtoken');
 const db = require('../db');
 const storage = require('../storage');
 const templates = require('../templates');
@@ -13,6 +14,9 @@ const { fixFilenameEncoding } = require('../utils/encoding');
 const { getSubordinateUserIds } = require('../utils/hierarchy');
 const { signDownloadUrlParams, verifyDownloadUrlParams } = require('../utils/crypto');
 const searchQueue = require('../utils/search_queue');
+
+const ONLYOFFICE_JWT_SECRET = (process.env.ONLYOFFICE_JWT_SECRET || '').trim();
+const MAX_ONLYOFFICE_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 
 // Список метаданных документа для реестров (исключает тяжёлые content_text и content_tsv)
 const DOC_META_COLUMNS = `
@@ -117,32 +121,35 @@ async function getDocumentAccess(docId, user) {
   };
 }
 
-// HELPER: Download saved document from ONLYOFFICE Document Server safely
+// HELPER: Download saved document strictly from trusted internal ONLYOFFICE Document Server hosts (anti-SSRF)
 function downloadFromOnlyoffice(originalUrl, targetFilePath) {
   return new Promise(async (resolve, reject) => {
-    const urlsToTry = [originalUrl];
+    let parsed;
     try {
-      const u = new URL(originalUrl);
-      if (u.hostname !== 'docflow_onlyoffice') {
-        const dockerU = new URL(originalUrl);
-        dockerU.hostname = 'docflow_onlyoffice';
-        dockerU.port = '80';
-        dockerU.protocol = 'http:';
-        urlsToTry.push(dockerU.toString());
-      }
-      if (u.hostname !== '127.0.0.1' && u.hostname !== 'localhost') {
-        const localU = new URL(originalUrl);
-        localU.hostname = '127.0.0.1';
-        localU.port = process.env.ONLYOFFICE_PORT || '28083';
-        localU.protocol = 'http:';
-        urlsToTry.push(localU.toString());
-      }
-    } catch (e) {}
+      parsed = new URL(String(originalUrl || ''));
+    } catch (e) {
+      return reject(new Error('Некорректный URL загрузки из ONLYOFFICE'));
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return reject(new Error('Запрещённый протокол загрузки ONLYOFFICE'));
+    }
+    if (!parsed.pathname || !parsed.pathname.startsWith('/') || parsed.pathname.includes('..')) {
+      return reject(new Error('Некорректный путь загрузки ONLYOFFICE'));
+    }
+
+    const safePathAndQuery = `${parsed.pathname}${parsed.search || ''}`;
+    const internalHosts = [
+      { host: process.env.ONLYOFFICE_INTERNAL_HOST || 'docflow_onlyoffice', port: process.env.ONLYOFFICE_INTERNAL_PORT || '80' },
+      { host: 'onlyoffice', port: '80' },
+      { host: '127.0.0.1', port: process.env.ONLYOFFICE_PORT || '28083' }
+    ];
+    const urlsToTry = internalHosts.map(t => `http://${t.host}:${t.port}${safePathAndQuery}`);
 
     let lastError = null;
     for (const fetchUrl of urlsToTry) {
       try {
-        console.log(`[ONLYOFFICE Download] Attempting to pull saved file from: ${fetchUrl}...`);
+        console.log(`[ONLYOFFICE Download] Attempting to pull saved file from trusted internal host: ${fetchUrl}...`);
         const size = await fetchSingleUrl(fetchUrl, targetFilePath);
         return resolve(size);
       } catch (err) {
@@ -150,7 +157,7 @@ function downloadFromOnlyoffice(originalUrl, targetFilePath) {
         console.warn(`[ONLYOFFICE Download] Failed from ${fetchUrl}: ${err.message}. Trying next candidate...`);
       }
     }
-    reject(lastError || new Error('Could not download document from any ONLYOFFICE URL'));
+    reject(lastError || new Error('Could not download document from trusted ONLYOFFICE internal endpoints'));
   });
 }
 
@@ -159,45 +166,60 @@ function fetchSingleUrl(resolvedUrl, targetFilePath) {
     const tempFilePath = `${targetFilePath}.tmp.${Date.now()}`;
     const fileStream = fs.createWriteStream(tempFilePath);
     const client = resolvedUrl.startsWith('https:') ? https : http;
+    let settled = false;
+
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      try { fileStream.close(); } catch (e) {}
+      if (fs.existsSync(tempFilePath)) {
+        try { fs.unlinkSync(tempFilePath); } catch (e) {}
+      }
+      reject(err);
+    };
 
     const req = client.get(resolvedUrl, { timeout: 15000 }, (res) => {
       if (res.statusCode !== 200) {
-        fileStream.close();
-        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        return reject(new Error(`ONLYOFFICE server responded with HTTP ${res.statusCode}`));
+        res.resume();
+        return fail(new Error(`ONLYOFFICE server responded with HTTP ${res.statusCode}`));
       }
+
+      let downloadedBytes = 0;
+      res.on('data', (chunk) => {
+        downloadedBytes += chunk.length;
+        if (downloadedBytes > MAX_ONLYOFFICE_DOWNLOAD_BYTES) {
+          req.destroy();
+          res.destroy();
+          return fail(new Error('Превышен максимальный размер загружаемого документа ONLYOFFICE (100MB)'));
+        }
+      });
 
       res.pipe(fileStream);
 
       fileStream.on('finish', () => {
+        if (settled) return;
         fileStream.close();
         try {
           const stats = fs.statSync(tempFilePath);
           if (stats.size === 0) {
-            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-            return reject(new Error('Downloaded document from ONLYOFFICE is 0 bytes'));
+            return fail(new Error('Downloaded document from ONLYOFFICE is 0 bytes'));
           }
           fs.copyFileSync(tempFilePath, targetFilePath);
           fs.unlinkSync(tempFilePath);
+          settled = true;
           resolve(stats.size);
         } catch (err) {
-          if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-          reject(err);
+          fail(err);
         }
       });
     });
 
-    req.on('error', (err) => {
-      fileStream.close();
-      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      reject(err);
-    });
+    req.on('error', (err) => fail(err));
+    fileStream.on('error', (err) => fail(err));
 
     req.on('timeout', () => {
       req.destroy();
-      fileStream.close();
-      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      reject(new Error('Timeout downloading from ONLYOFFICE'));
+      fail(new Error('Timeout downloading from ONLYOFFICE'));
     });
   });
 }
@@ -286,8 +308,9 @@ router.get('/', authenticateToken, async (req, res) => {
         const isOwner = ownerId === curUserId;
         const isManager = subIdSet.has(ownerId);
         doc.can_manage_access = Boolean(isAdmin || isOwner || isManager);
-        doc.permissions = permsByDocId.get(doc.id) || [];
-        doc.permissions_count = doc.permissions.length;
+        const permsList = permsByDocId.get(doc.id) || [];
+        doc.permissions_count = permsList.length;
+        doc.permissions = doc.can_manage_access ? permsList : [];
       }
     }
 
@@ -517,6 +540,12 @@ router.patch('/folders/:id', authenticateToken, async (req, res) => {
 
     const existingRes = await db.query('SELECT * FROM document_folders WHERE id = $1', [folderId]);
     if (existingRes.rows.length === 0) return res.status(404).json({ error: 'Папка не найдена' });
+    const folder = existingRes.rows[0];
+    const isAdmin = req.user.role === 'ADMIN' || req.user.role_code === 'admin';
+    const isFolderCreator = folder.created_by && parseInt(folder.created_by, 10) === parseInt(req.user.id, 10);
+    if (!isAdmin && !isFolderCreator) {
+      return res.status(403).json({ error: 'Изменять папку может только её создатель или администратор' });
+    }
 
     const { name, parent_id } = req.body;
     const updates = [];
@@ -580,6 +609,11 @@ router.delete('/folders/:id', authenticateToken, async (req, res) => {
     const folderRes = await db.query('SELECT * FROM document_folders WHERE id = $1', [folderId]);
     if (folderRes.rows.length === 0) return res.status(404).json({ error: 'Папка не найдена' });
     const folder = folderRes.rows[0];
+    const isAdmin = req.user.role === 'ADMIN' || req.user.role_code === 'admin';
+    const isFolderCreator = folder.created_by && parseInt(folder.created_by, 10) === parseInt(req.user.id, 10);
+    if (!isAdmin && !isFolderCreator) {
+      return res.status(403).json({ error: 'Удалять папку может только её создатель или администратор' });
+    }
 
     await db.withTransaction(async (client) => {
       let parentCategory = 'Общие';
@@ -912,8 +946,9 @@ router.get('/:id/onlyoffice-config', authenticateToken, async (req, res) => {
       ? process.env.APP_INTERNAL_URL.replace(/^https?:\/\//, '')
       : (process.env.CONTAINER_APP_HOST || 'docflow_streamlined:3000');
     const { sig, exp } = signDownloadUrlParams(doc.id, 7200);
+    const cbSig = signDownloadUrlParams(`oo_cb:${doc.id}`, 86400);
     const downloadUrl = `http://${internalHost}/api/documents/download/${doc.id}?sig=${sig}&exp=${exp}`;
-    const callbackUrl = `http://${internalHost}/api/documents/onlyoffice-callback?docId=${doc.id}`;
+    const callbackUrl = `http://${internalHost}/api/documents/onlyoffice-callback?docId=${doc.id}&sig=${cbSig.sig}&exp=${cbSig.exp}`;
 
     let documentKey = doc.edit_key;
     if (!documentKey) {
@@ -965,6 +1000,18 @@ router.get('/:id/onlyoffice-config', authenticateToken, async (req, res) => {
       userAccessLevel: access.accessLevel
     };
 
+    if (ONLYOFFICE_JWT_SECRET) {
+      config.token = jwt.sign(
+        {
+          documentType: config.documentType,
+          document: config.document,
+          editorConfig: config.editorConfig
+        },
+        ONLYOFFICE_JWT_SECRET,
+        { expiresIn: '2h' }
+      );
+    }
+
     res.json(config);
   } catch (err) {
     console.error('ONLYOFFICE config error:', err);
@@ -988,10 +1035,20 @@ router.post('/:id/save-now', authenticateToken, async (req, res) => {
       await db.query('UPDATE documents SET edit_key = $1 WHERE id = $2', [documentKey, doc.id]);
     }
 
-    const commandPayload = JSON.stringify({
+    const cmdBodyObj = {
       c: 'forcesave',
       key: documentKey
-    });
+    };
+    const cmdHeaders = {
+      'Content-Type': 'application/json'
+    };
+    if (ONLYOFFICE_JWT_SECRET) {
+      const cmdToken = jwt.sign(cmdBodyObj, ONLYOFFICE_JWT_SECRET, { expiresIn: '5m' });
+      cmdBodyObj.token = cmdToken;
+      cmdHeaders['Authorization'] = `Bearer ${cmdToken}`;
+    }
+    const commandPayload = JSON.stringify(cmdBodyObj);
+    cmdHeaders['Content-Length'] = Buffer.byteLength(commandPayload);
 
     const commandResult = await new Promise((resolve) => {
       const commandReq = http.request({
@@ -999,10 +1056,7 @@ router.post('/:id/save-now', authenticateToken, async (req, res) => {
         port: 80,
         path: '/coauthoring/CommandService.ashx',
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(commandPayload)
-        },
+        headers: cmdHeaders,
         timeout: 8000
       }, (cmdRes) => {
         let raw = '';
@@ -1063,16 +1117,11 @@ router.get('/download/:id', authenticateTokenOptional, async (req, res) => {
       }
       doc = access.doc;
     } else {
-      // Без подписи и без токена разрешаем только явно общедоступные документы
-      const docRes = await db.query('SELECT * FROM documents WHERE id = $1', [id]);
-      if (docRes.rows.length === 0) return res.status(404).send('File not found');
-      if (!docRes.rows[0].is_public) {
-        return res.status(401).json({ error: 'Требуется авторизация для скачивания документа' });
-      }
-      doc = docRes.rows[0];
+      return res.status(401).json({ error: 'Требуется авторизация для скачивания документа' });
     }
     const safePath = path.resolve(doc.file_path);
-    if (!safePath.startsWith(path.resolve(UPLOADS_DIR))) {
+    const uploadsRoot = path.resolve(UPLOADS_DIR);
+    if (!safePath.startsWith(uploadsRoot + path.sep)) {
       console.warn(`[Security Alert] Path traversal attempt blocked for document #${id}: ${doc.file_path}`);
       return res.status(403).send('Access denied: invalid file path');
     }
@@ -1132,11 +1181,47 @@ router.get('/download/:id', authenticateTokenOptional, async (req, res) => {
   }
 });
 
-// POST /api/documents/onlyoffice-callback - Save handler
+// POST /api/documents/onlyoffice-callback - Save handler (HMAC-signed callbackUrl + ONLYOFFICE JWT verification)
 router.post('/onlyoffice-callback', async (req, res) => {
   try {
-    const { status, url: downloadUrl } = req.body;
-    const docId = req.query.docId;
+    const docId = parseInt(req.query.docId, 10);
+    if (isNaN(docId)) {
+      return res.status(400).json({ error: 1 });
+    }
+
+    const validHmac = verifyDownloadUrlParams(`oo_cb:${docId}`, req.query.sig, req.query.exp);
+    if (!validHmac) {
+      console.warn(`[ONLYOFFICE Callback Security] Invalid/missing HMAC signature for docId=${docId}`);
+      return res.status(403).json({ error: 1 });
+    }
+
+    let payload = req.body || {};
+    if (ONLYOFFICE_JWT_SECRET) {
+      let rawJwt = null;
+      const authHdr = req.headers['authorization'] || '';
+      if (authHdr.startsWith('Bearer ')) {
+        rawJwt = authHdr.slice(7).trim();
+      } else if (typeof payload.token === 'string') {
+        rawJwt = payload.token;
+      }
+      if (!rawJwt) {
+        console.warn(`[ONLYOFFICE Callback Security] Missing ONLYOFFICE JWT for docId=${docId}`);
+        return res.status(403).json({ error: 1 });
+      }
+      let decoded;
+      try {
+        decoded = jwt.verify(rawJwt, ONLYOFFICE_JWT_SECRET);
+      } catch (jwtErr) {
+        console.warn(`[ONLYOFFICE Callback Security] Invalid ONLYOFFICE JWT for docId=${docId}:`, jwtErr.message);
+        return res.status(403).json({ error: 1 });
+      }
+      const jwtData = decoded && decoded.payload ? decoded.payload : decoded;
+      if (jwtData && typeof jwtData === 'object') {
+        payload = { ...payload, ...jwtData };
+      }
+    }
+
+    const { status, url: downloadUrl } = payload;
     console.log(`[ONLYOFFICE Callback] Status: ${status} for docId: ${docId}, hasUrl: ${Boolean(downloadUrl)}`);
 
     if (status === 6 && downloadUrl) {
@@ -1177,4 +1262,5 @@ router.post('/onlyoffice-callback', async (req, res) => {
   }
 });
 
+router.getDocumentAccess = getDocumentAccess;
 module.exports = router;

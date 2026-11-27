@@ -8,6 +8,7 @@ const templates = require('../templates');
 const { authenticateToken } = require('../middleware/auth');
 const { upload, UPLOADS_DIR } = require('../middleware/upload');
 const { fixFilenameEncoding } = require('../utils/encoding');
+const { canAccessProject } = require('../utils/hierarchy');
 const searchQueue = require('../utils/search_queue');
 
 // GET /api/materials/project/:projectId or /api/projects/:projectId/materials
@@ -15,6 +16,14 @@ const getMaterialsHandler = async (req, res) => {
   try {
     const { projectId } = req.params;
     const { search, type, status } = req.query;
+
+    const projCheck = await db.query('SELECT id FROM projects WHERE id = $1', [projectId]);
+    if (projCheck.rows.length === 0) return res.status(404).json({ error: 'Проект не найден' });
+
+    const hasAccess = await canAccessProject(projectId, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Отказано в доступе к материалам данного проекта' });
+    }
 
     let queryText = `
       SELECT pm.*,
@@ -69,6 +78,12 @@ const createMaterialHandler = async (req, res) => {
     if (projRes.rows.length === 0) {
       if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(404).json({ error: 'Проект не найден' });
+    }
+
+    const hasAccess = await canAccessProject(projectId, req.user);
+    if (!hasAccess) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      return res.status(403).json({ error: 'У вас нет прав на добавление материалов в этот проект' });
     }
 
     const directionId = projRes.rows[0].direction_id;
@@ -146,10 +161,23 @@ router.get('/download/:id', authenticateToken, async (req, res) => {
     if (matRes.rows.length === 0) return res.status(404).json({ error: 'Материал не найден' });
 
     const material = matRes.rows[0];
-    let filePath = material.file_path;
+    const hasAccess = await canAccessProject(material.project_id, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Отказано в доступе к материалу проекта' });
+    }
+
+    const uploadsRoot = path.resolve(UPLOADS_DIR);
+    let filePath = path.resolve(material.file_path || '');
+
+    if (!filePath.startsWith(uploadsRoot + path.sep)) {
+      return res.status(403).json({ error: 'Недопустимый путь к файлу материала' });
+    }
 
     if (!fs.existsSync(filePath)) {
-      const fallbackPath = path.join(UPLOADS_DIR, path.basename(filePath));
+      const fallbackPath = path.resolve(UPLOADS_DIR, path.basename(filePath));
+      if (!fallbackPath.startsWith(uploadsRoot + path.sep)) {
+        return res.status(403).json({ error: 'Недопустимый путь к файлу материала' });
+      }
       if (fs.existsSync(fallbackPath)) {
         filePath = fallbackPath;
       } else {

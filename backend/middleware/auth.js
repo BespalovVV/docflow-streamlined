@@ -2,15 +2,27 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { appCache } = require('../utils/cache');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'docflow_secret_key_2026_super_secure';
+const DEFAULT_INSECURE_SECRET = 'docflow_secret_key_2026_super_secure';
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_INSECURE_SECRET;
 const USER_CACHE_TTL_MS = 30000;
+
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_INSECURE_DEV_SECRETS !== '1') {
+  const isWeakSecret =
+    !process.env.JWT_SECRET ||
+    process.env.JWT_SECRET.length < 32 ||
+    process.env.JWT_SECRET === DEFAULT_INSECURE_SECRET ||
+    process.env.JWT_SECRET.includes('CHANGE_ME');
+  if (isWeakSecret) {
+    throw new Error('[SECURITY FATAL] JWT_SECRET must be explicitly set (>= 32 chars, non-default) in production.');
+  }
+}
 
 function extractToken(req) {
   const authHeader = req.headers['authorization'];
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.split(' ')[1];
   }
-  if (req.query && req.query.token) {
+  if (req.method === 'GET' && req.query && req.query.token) {
     return req.query.token;
   }
   if (req.headers.cookie) {
@@ -39,6 +51,7 @@ async function getCachedUser(userId) {
 
   const userRes = await db.query(`
     SELECT u.id, u.email, u.full_name, u.role, u.department, u.role_id,
+           COALESCE(u.token_version, 1) AS token_version,
            r.code AS role_code,
            COALESCE(
              (SELECT array_agg(p.code)
@@ -84,6 +97,10 @@ function authenticateToken(req, res, next) {
         return res.status(401).json({ error: 'Пользователь не найден в системе.' });
       }
 
+      if (decodedUser.tv !== undefined && Number(decodedUser.tv) !== Number(freshUser.token_version || 1)) {
+        return res.status(401).json({ error: 'Сессия завершена или отозвана. Войдите заново.' });
+      }
+
       req.user = {
         ...decodedUser,
         email: freshUser.email,
@@ -92,15 +109,13 @@ function authenticateToken(req, res, next) {
         role_code: freshUser.role_code || decodedUser.role_code || (freshUser.role === 'ADMIN' ? 'admin' : 'employee'),
         department: freshUser.department,
         full_name: freshUser.full_name,
+        token_version: Number(freshUser.token_version || 1),
         permissions: Array.isArray(freshUser.permissions) ? freshUser.permissions : []
       };
       next();
     } catch (dbErr) {
-      req.user = {
-        ...decodedUser,
-        role: (decodedUser.role || 'USER').toUpperCase()
-      };
-      next();
+      console.error('[Auth Fail-Closed] Database error verifying user:', dbErr.message);
+      return res.status(503).json({ error: 'Сервис авторизации временно недоступен.' });
     }
   });
 }
@@ -124,21 +139,26 @@ function authenticateTokenOptional(req, res, next) {
     try {
       const freshUser = await getCachedUser(decodedUser.id);
       if (freshUser) {
-        req.user = {
-          ...decodedUser,
-          email: freshUser.email,
-          role: (freshUser.role || 'USER').toUpperCase(),
-          role_id: freshUser.role_id || decodedUser.role_id,
-          role_code: freshUser.role_code || decodedUser.role_code || (freshUser.role === 'ADMIN' ? 'admin' : 'employee'),
-          department: freshUser.department,
-          full_name: freshUser.full_name,
-          permissions: Array.isArray(freshUser.permissions) ? freshUser.permissions : []
-        };
+        if (decodedUser.tv !== undefined && Number(decodedUser.tv) !== Number(freshUser.token_version || 1)) {
+          req.user = null;
+        } else {
+          req.user = {
+            ...decodedUser,
+            email: freshUser.email,
+            role: (freshUser.role || 'USER').toUpperCase(),
+            role_id: freshUser.role_id || decodedUser.role_id,
+            role_code: freshUser.role_code || decodedUser.role_code || (freshUser.role === 'ADMIN' ? 'admin' : 'employee'),
+            department: freshUser.department,
+            full_name: freshUser.full_name,
+            token_version: Number(freshUser.token_version || 1),
+            permissions: Array.isArray(freshUser.permissions) ? freshUser.permissions : []
+          };
+        }
       } else {
         req.user = null;
       }
     } catch (dbErr) {
-      req.user = decodedUser;
+      req.user = null;
     }
     next();
   });

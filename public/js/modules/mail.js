@@ -520,7 +520,7 @@ window.MailModule = (function() {
           <div class="mail-reader-body">
             ${hasHtml ? `
               <div class="mail-iframe-wrapper" id="mail-iframe-wrapper">
-                <iframe id="mail-html-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+                <iframe id="mail-html-frame" sandbox="allow-same-origin allow-popups"></iframe>
               </div>
             ` : `
               <div class="mail-plain-body" style="white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; box-sizing: border-box; font-family: monospace; font-size: 14px; color: var(--text-main); background: var(--bg-subtle); padding: 24px; border-radius: 10px; line-height: 1.6; border: 1px solid var(--border-color);">
@@ -577,14 +577,49 @@ window.MailModule = (function() {
               </style>
             `;
 
-            let safeHtml = rawBody.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-            if (safeHtml.includes('<head>')) {
-              safeHtml = safeHtml.replace('<head>', '<head>' + gmailNormalizeCss);
-            } else if (safeHtml.includes('<html>')) {
-              safeHtml = safeHtml.replace('<html>', '<html><head>' + gmailNormalizeCss + '</head>');
-            } else {
-              safeHtml = '<html><head>' + gmailNormalizeCss + '</head><body>' + safeHtml + '</body></html>';
-            }
+            const sanitizeEmailHtml = (dirtyHtml) => {
+              try {
+                const parser = new DOMParser();
+                const parsedDoc = parser.parseFromString(String(dirtyHtml || ''), 'text/html');
+                const forbiddenTags = 'script, iframe, object, embed, applet, form, base, meta, link, svg, math, audio, video, source, track';
+                parsedDoc.querySelectorAll(forbiddenTags).forEach(el => el.remove());
+
+                const isSafeHref = (val, allowDataImg = false) => {
+                  const clean = String(val || '').replace(/[\u0000-\u0020]+/g, '').toLowerCase();
+                  if (!clean) return true;
+                  if (clean.startsWith('#')) return true;
+                  if (clean.startsWith('http://') || clean.startsWith('https://')) return true;
+                  if (!allowDataImg && (clean.startsWith('mailto:') || clean.startsWith('tel:'))) return true;
+                  if (allowDataImg && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(clean)) return true;
+                  return false;
+                };
+
+                parsedDoc.querySelectorAll('*').forEach(el => {
+                  for (const attr of Array.from(el.attributes)) {
+                    const name = attr.name.toLowerCase();
+                    if (name.startsWith('on') || name === 'srcdoc' || name === 'formaction' || name === 'xlink:href') {
+                      el.removeAttribute(attr.name);
+                      continue;
+                    }
+                    if (name === 'href' || name === 'action') {
+                      if (!isSafeHref(attr.value, false)) el.removeAttribute(attr.name);
+                    } else if (name === 'src' || name === 'poster' || name === 'background') {
+                      if (!isSafeHref(attr.value, true)) el.removeAttribute(attr.name);
+                    } else if (name === 'style') {
+                      if (/expression\s*\(|javascript\s*:|url\s*\(\s*['"]?\s*(?:javascript|data:(?!image\/(?:png|jpeg|jpg|gif|webp)))/i.test(attr.value)) {
+                        el.removeAttribute(attr.name);
+                      }
+                    }
+                  }
+                });
+                return parsedDoc.body ? parsedDoc.body.innerHTML : '';
+              } catch (e) {
+                return AppState.escapeHtml(String(dirtyHtml || ''));
+              }
+            };
+
+            const cleanedBody = sanitizeEmailHtml(rawBody);
+            const safeHtml = '<html><head>' + gmailNormalizeCss + '</head><body>' + cleanedBody + '</body></html>';
 
             doc.write(safeHtml);
             doc.close();
@@ -731,13 +766,13 @@ window.MailModule = (function() {
         const replySubject = /^re:\s*/i.test(rawSubj) ? rawSubj : `Re: ${rawSubj}`;
         let plainQuote = rawBody || '';
         if (hasHtml) {
-          const tmp = document.createElement('div');
-          tmp.innerHTML = rawBody
+          const cleaned = rawBody
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
             .replace(/<br\s*\/?>/gi, '\n')
             .replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n');
-          plainQuote = (tmp.textContent || tmp.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
+          const parsedQuote = new DOMParser().parseFromString(cleaned, 'text/html');
+          plainQuote = (parsedQuote.body?.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
         }
         if (plainQuote.length > 1200) {
           plainQuote = plainQuote.slice(0, 1200).trim() + '\n...';

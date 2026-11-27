@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+const dns = require('dns').promises;
+const net = require('net');
 const nodemailer = require('nodemailer');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
@@ -9,8 +11,9 @@ const db = require('../db');
 const storage = require('../storage');
 const searchQueue = require('../utils/search_queue');
 const multer = require('multer');
-const { encrypt, decrypt } = require('../utils/crypto');
+const { encrypt, decryptStrict } = require('../utils/crypto');
 const { authenticateToken } = require('../middleware/auth');
+const { secureFileFilter } = require('../middleware/upload');
 const { fixFilenameEncoding, getExtensionFromMime, ensureFileExtension } = require('../utils/encoding');
 
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
@@ -20,19 +23,94 @@ const mailStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const cleanOriginal = fixFilenameEncoding(file.originalname);
+    const cleanOriginal = fixFilenameEncoding(file.originalname || '');
     let ext = path.extname(cleanOriginal).toLowerCase();
     if (!ext && file.mimetype) {
       ext = getExtensionFromMime(file.mimetype);
     }
-    if (!ext) ext = '.bin';
+    if (!ext) ext = '.txt';
     cb(null, 'mail-att-' + uniqueSuffix + ext);
   }
 });
 const mailUpload = multer({
   storage: mailStorage,
-  limits: { fileSize: 50 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: secureFileFilter
 });
+
+const SAFE_CID_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
+
+function stripHeaderCrlf(value) {
+  return String(value || '').replace(/[\r\n]+/g, ' ').trim();
+}
+
+function isPrivateOrReservedIp(ip) {
+  const raw = String(ip || '').trim().toLowerCase();
+  if (!raw) return true;
+  if (raw.startsWith('::ffff:')) {
+    return isPrivateOrReservedIp(raw.slice(7));
+  }
+  const kind = net.isIP(raw);
+  if (kind === 4) {
+    const parts = raw.split('.').map(n => parseInt(n, 10));
+    if (parts.length !== 4 || parts.some(n => isNaN(n) || n < 0 || n > 255)) return true;
+    const [a, b] = parts;
+    if (a === 0 || a === 10 || a === 127) return true; // 0/8, 10/8, loopback
+    if (a === 169 && b === 254) return true; // link-local / cloud metadata
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12
+    if (a === 192 && b === 168) return true; // 192.168/16
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    if (a >= 224) return true; // multicast/reserved
+    return false;
+  }
+  if (kind === 6) {
+    if (raw === '::' || raw === '::1') return true;
+    if (raw.startsWith('fe80:') || raw.startsWith('fc') || raw.startsWith('fd')) return true;
+    return false;
+  }
+  return true;
+}
+
+async function assertSafeMailHost(rawHost) {
+  const host = String(rawHost || '').trim().toLowerCase();
+  if (!host || /\s/.test(host) || host.includes('/') || host.includes(':')) {
+    throw new Error('Некорректный адрес почтового сервера');
+  }
+  const allowlist = new Set(
+    String(process.env.MAIL_ALLOWED_INTERNAL_HOSTS || '')
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (allowlist.has(host)) return;
+
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) {
+    throw new Error('Использование локальных и внутренних адресов почтовых серверов запрещено');
+  }
+  if (net.isIP(host)) {
+    if (isPrivateOrReservedIp(host)) {
+      throw new Error('Использование приватных и служебных IP-адресов запрещено');
+    }
+    return;
+  }
+  if (!host.includes('.')) {
+    throw new Error('Укажите полное доменное имя почтового сервера');
+  }
+  let records;
+  try {
+    records = await dns.lookup(host, { all: true });
+  } catch (e) {
+    throw new Error('Не удалось разрешить доменное имя почтового сервера');
+  }
+  if (!records || records.length === 0) {
+    throw new Error('Не удалось разрешить адрес почтового сервера');
+  }
+  for (const rec of records) {
+    if (isPrivateOrReservedIp(rec.address)) {
+      throw new Error('Почтовый сервер указывает на запрещённый внутренний IP-адрес');
+    }
+  }
+}
 
 // GET /api/mail/recipients/suggest?q=admi - Autocomplete email suggestions
 router.get('/recipients/suggest', authenticateToken, async (req, res) => {
@@ -99,6 +177,13 @@ router.post('/settings', authenticateToken, async (req, res) => {
     const imapPortNum = parseInt(imap_port || 993, 10);
     const smtpPortNum = parseInt(smtp_port || 465, 10);
 
+    try {
+      await assertSafeMailHost(imap_host);
+      await assertSafeMailHost(smtp_host);
+    } catch (hostErr) {
+      return res.status(400).json({ error: hostErr.message });
+    }
+
     // Test IMAP Connection with tight timeouts to prevent hanging
     const client = new ImapFlow({
       host: imap_host,
@@ -118,7 +203,7 @@ router.post('/settings', authenticateToken, async (req, res) => {
       await client.connect();
       await client.logout();
     } catch (imapErr) {
-      return res.status(400).json({ error: `Ошибка подключения IMAP: ${imapErr.message}. Проверьте сервер, порт и пароль приложения.` });
+      return res.status(400).json({ error: 'Ошибка подключения к серверу IMAP. Проверьте домен, порт и пароль приложения.' });
     }
 
     // Test SMTP Connection with tight timeouts
@@ -135,7 +220,7 @@ router.post('/settings', authenticateToken, async (req, res) => {
     try {
       await transporter.verify();
     } catch (smtpErr) {
-      return res.status(400).json({ error: `Ошибка подключения SMTP: ${smtpErr.message}. Проверьте сервер и порт SMTP.` });
+      return res.status(400).json({ error: 'Ошибка подключения к серверу SMTP. Проверьте домен, порт и пароль приложения.' });
     }
 
     // Encrypt password before saving to DB
@@ -171,8 +256,9 @@ function embedCidAttachments(html, attachments) {
 
   for (const att of attachments) {
     if (att.contentId && att.content) {
+      const mimeType = String(att.contentType || 'image/png').split(';')[0].trim().toLowerCase();
+      if (!SAFE_CID_IMAGE_MIMES.has(mimeType)) continue;
       const cleanCid = String(att.contentId).replace(/^<|>$/g, '');
-      const mimeType = att.contentType || 'image/png';
       const base64Data = Buffer.isBuffer(att.content) ? att.content.toString('base64') : '';
       if (base64Data) {
         const dataUri = `data:${mimeType};base64,${base64Data}`;
@@ -223,7 +309,7 @@ function isPromotionalOrBulkMail(parsed, senderEmail = '', senderName = '', subj
 
 // IMAP Client Factory with explicit network safety timeouts
 function getImapClient(s) {
-  const realPassword = decrypt(s.password);
+  const realPassword = decryptStrict(s.password);
   const client = new ImapFlow({
     host: s.imap_host,
     port: s.imap_port,
@@ -288,6 +374,7 @@ async function syncFlagToImap(userId, folder, imapUid, flags, add = true) {
     const settingsRes = await db.query('SELECT * FROM user_mail_settings WHERE user_id = $1', [userId]);
     if (settingsRes.rows.length === 0) return;
     const s = settingsRes.rows[0];
+    await assertSafeMailHost(s.imap_host);
     const client = getImapClient(s);
     await client.connect();
 
@@ -319,6 +406,7 @@ async function deleteFromImap(userId, folder, imapUid) {
     const settingsRes = await db.query('SELECT * FROM user_mail_settings WHERE user_id = $1', [userId]);
     if (settingsRes.rows.length === 0) return;
     const s = settingsRes.rows[0];
+    await assertSafeMailHost(s.imap_host);
     const client = getImapClient(s);
     await client.connect();
 
@@ -356,6 +444,7 @@ async function appendToImapSent(userId, rawMime, flags = ['\\Seen']) {
     const settingsRes = await db.query('SELECT * FROM user_mail_settings WHERE user_id = $1', [userId]);
     if (settingsRes.rows.length === 0) return null;
     const s = settingsRes.rows[0];
+    await assertSafeMailHost(s.imap_host);
     const client = getImapClient(s);
     await client.connect();
 
@@ -642,6 +731,7 @@ async function performMailSync(userId, limit = 50) {
     }
 
     const s = settingsRes.rows[0];
+    await assertSafeMailHost(s.imap_host);
     const client = getImapClient(s);
 
     try {
@@ -1011,8 +1101,9 @@ router.post('/send', authenticateToken, mailUpload.array('attachments', 10), asy
 
     if (settingsRes.rows.length > 0) {
       const s = settingsRes.rows[0];
+      await assertSafeMailHost(s.smtp_host);
       senderEmail = s.email;
-      const realPassword = decrypt(s.password);
+      const realPassword = decryptStrict(s.password);
       const transporter = nodemailer.createTransport({
         host: s.smtp_host,
         port: s.smtp_port,
@@ -1023,11 +1114,16 @@ router.post('/send', authenticateToken, mailUpload.array('attachments', 10), asy
         socketTimeout: 5000
       });
 
+      const safeSenderName = stripHeaderCrlf(req.user.full_name).replace(/"/g, "'");
+      const safeSenderEmail = stripHeaderCrlf(s.email);
+      const safeToEmail = stripHeaderCrlf(to_email);
+      const safeSubject = stripHeaderCrlf(subject);
+
       try {
         await transporter.sendMail({
-          from: `"${req.user.full_name}" <${s.email}>`,
-          to: to_email,
-          subject: subject,
+          from: `"${safeSenderName}" <${safeSenderEmail}>`,
+          to: safeToEmail,
+          subject: safeSubject,
           text: body,
           attachments: mailAttachments
         });
@@ -1040,9 +1136,9 @@ router.post('/send', authenticateToken, mailUpload.array('attachments', 10), asy
       const messageId = `<${Date.now()}.${Math.random().toString(36).substring(2)}@docflow.local>`;
       const dateRfc = new Date().toUTCString();
       const rawMime = [
-        `From: "${req.user.full_name}" <${senderEmail}>`,
-        `To: ${to_email}`,
-        `Subject: ${subject}`,
+        `From: "${safeSenderName}" <${safeSenderEmail}>`,
+        `To: ${safeToEmail}`,
+        `Subject: ${safeSubject}`,
         `Date: ${dateRfc}`,
         `Message-ID: ${messageId}`,
         `MIME-Version: 1.0`,
@@ -1066,9 +1162,9 @@ router.post('/send', authenticateToken, mailUpload.array('attachments', 10), asy
       INSERT INTO mail_messages (user_id, folder, sender_name, sender_email, recipient_email, subject, preview, body, message_id, imap_uid, is_read, created_at)
       VALUES ($1, 'sent', $2, $3, $4, $5, $6, $7, $8, $9, true, NOW())
       ON CONFLICT (user_id, folder, imap_uid) WHERE imap_uid IS NOT NULL
-      DO NOTHING
+      DO UPDATE SET subject = EXCLUDED.subject, preview = EXCLUDED.preview, body = EXCLUDED.body
       RETURNING id
-    `, [req.user.id, req.user.full_name, senderEmail, to_email, subject, preview, body, messageId, appendUid]);
+    `, [req.user.id, stripHeaderCrlf(req.user.full_name), stripHeaderCrlf(senderEmail), stripHeaderCrlf(to_email), stripHeaderCrlf(subject), preview, body, messageId, appendUid]);
 
     const sentMailId = insMsgRes.rows[0].id;
 

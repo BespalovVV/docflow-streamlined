@@ -7,6 +7,7 @@ const storage = require('../storage');
 const { authenticateToken } = require('../middleware/auth');
 const { messengerUpload, UPLOADS_DIR } = require('../middleware/upload');
 const { fixFilenameEncoding, getExtensionFromMime } = require('../utils/encoding');
+const documentsRouter = require('./documents');
 
 // Server-Sent Events (SSE) Client Registry indexed by userId for O(1) DM delivery
 const sseClients = new Set();
@@ -243,10 +244,30 @@ router.post('/messages', authenticateToken, messengerUpload, async (req, res) =>
 
     let extraAttachments = [];
     if (req.body.attachments_json) {
+      let parsed = null;
       try {
-        const parsed = JSON.parse(req.body.attachments_json);
-        if (Array.isArray(parsed)) extraAttachments = parsed;
-      } catch (e) {}
+        parsed = JSON.parse(req.body.attachments_json);
+      } catch (e) {
+        parsed = null;
+      }
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          const docId = parseInt(item && item.docId, 10);
+          if (!isNaN(docId) && docId > 0) {
+            const access = await documentsRouter.getDocumentAccess(docId, req.user);
+            if (!access.doc || !access.canView) {
+              return res.status(403).json({ error: 'У вас нет прав на отправку указанного документа' });
+            }
+            extraAttachments.push({
+              docId: access.doc.id,
+              name: access.doc.title,
+              size: access.doc.file_size || 0,
+              type: 'docflow_document',
+              url: `/api/documents/download/${access.doc.id}`
+            });
+          }
+        }
+      }
     }
 
     const attachments = [
@@ -275,7 +296,10 @@ router.post('/messages', authenticateToken, messengerUpload, async (req, res) =>
     const targetRecipientId = recipient_id ? parseInt(recipient_id, 10) : null;
     const channelName = targetRecipientId ? null : (channel || 'general');
 
-    if (!targetRecipientId && channelName === 'general') {
+    if (!targetRecipientId) {
+      if (channelName !== 'general') {
+        return res.status(403).json({ error: 'Доступен только общий канал объявлений' });
+      }
       const isAdmin = req.user.role === 'ADMIN' || req.user.role_code === 'admin';
       if (!isAdmin) {
         return res.status(403).json({ error: 'В общий канал могут писать только администраторы' });
@@ -319,14 +343,15 @@ router.get('/download', authenticateToken, async (req, res) => {
     const rawUrl = req.query.url || req.query.file;
     if (!rawUrl) return res.status(400).send('Требуется параметр файла');
 
-    let relativePath = rawUrl.replace(/^\/?uploads\//, '');
+    let relativePath = String(rawUrl).replace(/^\/?uploads\//, '');
+    const uploadsRoot = path.resolve(UPLOADS_DIR);
     const safePath = path.resolve(UPLOADS_DIR, path.basename(relativePath));
 
-    if (!safePath.startsWith(path.resolve(UPLOADS_DIR))) {
+    if (!safePath.startsWith(uploadsRoot + path.sep)) {
       return res.status(403).send('Отказано в доступе: некорректный путь');
     }
 
-    // Проверка прав доступа к вложению мессенджера (админ, публичный канал или участник DM)
+    // Проверка прав доступа к вложению мессенджера (админ, публичный канал или участник DM; default-deny)
     const isAdmin = req.user.role === 'ADMIN' || req.user.role_code === 'admin';
     if (!isAdmin) {
       const uploadUrl = `/uploads/${path.basename(safePath)}`;
@@ -338,15 +363,17 @@ router.get('/download', authenticateToken, async (req, res) => {
         LIMIT 10
       `, [uploadUrl]);
 
-      if (msgRes.rows.length > 0) {
-        const isChannel = msgRes.rows.some(c => Boolean(c.channel));
-        const isParticipant = msgRes.rows.some(c =>
-          parseInt(c.sender_id, 10) === parseInt(req.user.id, 10) ||
-          parseInt(c.recipient_id, 10) === parseInt(req.user.id, 10)
-        );
-        if (!isChannel && !isParticipant) {
-          return res.status(403).send('Отказано в доступе к вложению чужого диалога');
-        }
+      if (msgRes.rows.length === 0) {
+        return res.status(403).send('Отказано в доступе к файлу');
+      }
+
+      const isChannel = msgRes.rows.some(c => Boolean(c.channel));
+      const isParticipant = msgRes.rows.some(c =>
+        parseInt(c.sender_id, 10) === parseInt(req.user.id, 10) ||
+        parseInt(c.recipient_id, 10) === parseInt(req.user.id, 10)
+      );
+      if (!isChannel && !isParticipant) {
+        return res.status(403).send('Отказано в доступе к вложению чужого диалога');
       }
     }
 
